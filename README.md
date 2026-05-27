@@ -171,6 +171,20 @@
 
 `connector_order_request`와 `connector_fill` 조회는 체결 상태 반영 및 포지션 변경의 입력이 될 수 있다. 조회만으로 끝나는지, 후속 update가 있는지 반드시 정적으로 확인한 뒤 다룬다.
 
+## 데이터베이스 구조
+
+로컬 PostgreSQL 기본 DB name은 `portfolio`다. 과거 `interest_crawler` 단일 public schema 구조에서, AWS Migration 준비를 위해 단일 DB `portfolio` 안에 domain별 schema를 두는 schema-per-domain 구조로 전환했다.
+
+이 모듈의 DB connection search_path는 아래 순서를 사용한다.
+
+```text
+execution,decision,research,connector,preprocessor,interest,reference,legacy,public
+```
+
+public에 있던 테이블은 각 domain schema로 이동되었으며, 이 모듈의 기존 SQL은 schema-qualified table name을 강제하지 않고 위 search_path 기반으로 동작한다. 따라서 `strategy_execution_order`, `strategy_execution_plan`, `strategy_position_state`, `connector_order_request`, `connector_fill` 같은 기존 테이블명 참조는 search_path 순서에 따라 `execution` 또는 `connector` schema의 테이블을 해석한다.
+
+세부 DB 구조와 운영 주의사항은 `docs/database.md`를 참고한다.
+
 ## 외부 의존성
 
 정적 확인 기준 주요 의존성:
@@ -189,7 +203,8 @@ connector 모듈은 `C:\Workspaces\port-marketconnector` 경로를 import path�
 
 - `INTEREST_DB_HOST` (default: `localhost`)
 - `INTEREST_DB_PORT` (default: `5433`)
-- `INTEREST_DB_NAME` (default: `interest_crawler`)
+- `INTEREST_DB_NAME` (default: `portfolio`)
+- `PORTFOLIO_DB_NAME` (default: `portfolio`, supported when the local environment uses this name)
 - `INTEREST_DB_USER` (default: `postgres`)
 - `INTEREST_DB_PASSWORD` (required, no default; use a placeholder such as `[REDACTED]` in documents)
 - `PORT_ACCOUNT_NO`
@@ -200,7 +215,7 @@ connector 모듈은 `C:\Workspaces\port-marketconnector` 경로를 import path�
 - `PORT_MAX_ORDER_AMOUNT_RATIO`
 - `PORT_MIN_ORDER_AMOUNT`
 
-실제 값은 민감정보일 수 있으므로 문서에 기록하지 않는다. 필요한 경우 `[REDACTED]`로 표기한다.
+실제 password, token, account, webhook 값은 민감정보일 수 있으므로 환경변수로 관리하고 문서에 기록하지 않는다. 필요한 경우 `[REDACTED]`로 표기한다.
 
 ## 안전한 확인 명령
 

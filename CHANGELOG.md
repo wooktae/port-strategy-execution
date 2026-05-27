@@ -7,6 +7,9 @@
 - DB 접속 설정을 `INTEREST_DB_*` 환경변수 기반으로 외부화했다.
 - `INTEREST_DB_PASSWORD`는 기본값 없이 필수 환경변수로 처리하도록 정리했다.
 - legacy 후보 생성 스크립트의 하드코딩 DB 접속 설정을 공통 `db_config.get_db_config()` 사용으로 변경했다.
+- 로컬 PostgreSQL 기본 DB name 설명을 `portfolio`로 정리했다.
+- AWS Migration 준비 관점의 단일 DB `portfolio` + schema-per-domain 구조와 execution 모듈 search_path를 문서화했다.
+- schema-per-domain 전환 후에도 기존 SQL은 connection search_path 기반으로 동작한다는 내용을 추가했다.
 
 ## 2026-05-26
 
