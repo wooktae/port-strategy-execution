@@ -3,14 +3,10 @@
 import os
 from decimal import Decimal
 
+from db_config import get_db_config
 
-DB_CONFIG = {
-    "host": os.getenv("PORT_DB_HOST", "localhost"),
-    "port": int(os.getenv("PORT_DB_PORT", "5433")),
-    "dbname": os.getenv("PORT_DB_NAME", "interest_crawler"),
-    "user": os.getenv("PORT_DB_USER", "postgres"),
-    "password": os.getenv("PORT_DB_PASSWORD", ""),
-}
+
+DB_CONFIG = get_db_config()
 
 
 ACCOUNT_NO = os.getenv("PORT_ACCOUNT_NO", "50187518")

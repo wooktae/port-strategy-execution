@@ -6,14 +6,7 @@ from datetime import date
 import psycopg2
 import psycopg2.extras
 
-
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "dbname": "interest_crawler",
-    "user": "postgres",
-    "password": "doflwhsk3768!",
-}
+from db_config import get_db_config
 
 
 ACCOUNT_NO = "50187518"
@@ -28,7 +21,7 @@ MIN_ORDER_AMOUNT = Decimal("10000")
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def fetch_one(conn, sql, params=None):

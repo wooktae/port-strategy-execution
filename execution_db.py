@@ -3,11 +3,11 @@
 import psycopg2
 import psycopg2.extras
 
-from execution_config import DB_CONFIG
+from db_config import get_db_config
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def fetch_one(conn, sql, params=None):

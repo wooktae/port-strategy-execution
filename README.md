@@ -49,6 +49,7 @@
 ├── execution_builder.py
 ├── execution_buy_sizing.py
 ├── execution_config.py
+├── db_config.py
 ├── execution_daily_position_sell_builder.py
 ├── execution_daily_signal_builder.py
 ├── execution_db.py
@@ -136,6 +137,8 @@
   - `connector_order_request`, `connector_fill`, `connector_balance_snapshot`, `connector_position_snapshot` 조회 경로가 있다.
 - `execution_db.py`
   - `psycopg2` 연결과 `fetch_one`, `fetch_all`, `execute_one` helper를 제공한다.
+- `db_config.py`
+  - DB 접속 설정을 `INTEREST_DB_*` 환경변수에서 읽고 `INTEREST_DB_PASSWORD`가 비어 있으면 오류를 발생시킨다.
 - `execution_config.py`
   - DB, 계좌, broker, environment, strategy, sizing 관련 환경변수 key를 읽는다.
   - 문서에는 실제 credential, 계좌번호, token 값을 기록하지 않는다.
@@ -182,13 +185,13 @@ connector 모듈은 `C:\Workspaces\port-marketconnector` 경로를 import path�
 
 ## 설정
 
-`execution_config.py`는 환경변수로 DB, 계좌, broker, environment, strategy, sizing 설정을 읽는다.
+`db_config.py`와 `execution_config.py`는 환경변수로 DB, 계좌, broker, environment, strategy, sizing 설정을 읽는다.
 
-- `PORT_DB_HOST`
-- `PORT_DB_PORT`
-- `PORT_DB_NAME`
-- `PORT_DB_USER`
-- `PORT_DB_PASSWORD`
+- `INTEREST_DB_HOST` (default: `localhost`)
+- `INTEREST_DB_PORT` (default: `5433`)
+- `INTEREST_DB_NAME` (default: `interest_crawler`)
+- `INTEREST_DB_USER` (default: `postgres`)
+- `INTEREST_DB_PASSWORD` (required, no default; use a placeholder such as `[REDACTED]` in documents)
 - `PORT_ACCOUNT_NO`
 - `PORT_BROKER_NAME`
 - `PORT_ENVIRONMENT`
@@ -219,4 +222,3 @@ git diff --stat
 - intraday monitor 실행
 - DB DDL/DML 또는 commit이 발생하는 코드 실행
 - 외부 API 호출 또는 크롤링 실행
-
