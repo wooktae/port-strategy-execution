@@ -1,5 +1,11 @@
 # C:\Workspaces\port_strategy_execution\execution_daily_position_sell_builder.py
 
+"""
+Daily position SELL decision을 strategy_execution_order 저장 데이터로 변환한다.
+decision payload를 보존하면서 SELL 주문 수량, 금액, validation 정보를 구성한다.
+DB 저장은 호출자와 repository에서 수행한다.
+"""
+
 from decimal import Decimal
 
 from execution_repository import dumps_json

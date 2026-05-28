@@ -1,3 +1,9 @@
+"""
+connector SELL 체결 내역을 execution order와 strategy_position_state에 동기화한다.
+SELL order를 FILLED로 갱신하고 포지션 remaining_qty를 차감/종료할 수 있다.
+체결 조회 및 포지션 변경 DB write가 발생하므로 명시 승인 없이 실행하지 않는다.
+"""
+
 from decimal import Decimal
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
@@ -288,6 +294,10 @@ def close_position_after_sell_fill(conn, execution_order, fill_summary):
 
 
 def sync_one_order(conn, execution_order):
+    """
+    SUBMITTED SELL execution order 1건의 체결을 요약하고 포지션 종료 처리를 수행한다.
+    execution_order와 position_state 상태 전이에 직접 영향을 주는 핵심 함수다.
+    """
     order_request_id = execution_order.get("connector_order_request_id")
 
     order_request = get_connector_order_request(

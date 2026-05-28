@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-05-28
+
+### Added
+
+- `docs/source-file-catalog.md`를 추가해 전체 주요 파일의 역할, 내용, 운영 주의사항을 한글로 정리했다.
+- Python 파일별 module docstring과 운영상 중요한 함수 설명 주석을 추가했다.
+- `docs/worklog/2026-05-28.md`에 미커밋 변경 확인과 문서화/주석 정리 작업 기록을 추가했다.
+
+### Changed
+
+- `README.md`에 파일 카탈로그와 주석 정리 기준을 추가했다.
+- 2026-05-27 미커밋 변경사항인 intraday monitor 정상 점검 결과 저장 정책을 문서에 반영했다.
+
+### Notes
+
+- 기능 변경 없음. 실행 로직, SQL 의미, 주문/connector 호출 흐름은 변경하지 않았다.
+- 실제 주문 실행, connector 호출, 체결 조회, position sync, intraday monitor 실행, DB DDL/DML은 수행하지 않았다.
+
 ## 2026-05-27
 
 ### Changed

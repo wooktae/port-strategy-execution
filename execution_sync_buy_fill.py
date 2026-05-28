@@ -1,3 +1,9 @@
+"""
+connector BUY 체결 내역을 strategy_execution_order 상태에 동기화하는 entrypoint.
+connector_order_request와 connector_fill을 조회하고 BUY order를 FILLED로 갱신할 수 있다.
+체결 조회 및 DB update 경로이므로 명시 승인 없이 실행하지 않는다.
+"""
+
 from decimal import Decimal
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
@@ -202,6 +208,10 @@ def mark_execution_order_filled(conn, execution_order, order_request, fill_summa
 
 
 def sync_one_order(conn, execution_order):
+    """
+    SUBMITTED BUY execution order 1건의 connector 체결을 요약해 FILLED 상태로 반영한다.
+    connector fill 조회 결과가 후속 position sync의 기준이 된다.
+    """
     order_request_id = execution_order.get("connector_order_request_id")
 
     order_request = get_connector_order_request(

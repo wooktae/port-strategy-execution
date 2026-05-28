@@ -1,5 +1,11 @@
 # C:\Workspaces\port_strategy_execution\daily_sell_execution_run.py
 
+"""
+Daily position decision의 SELL 대상을 실행 주문 후보로 변환하는 배치 entrypoint.
+decision row와 execution order를 연결하고 plan 요약을 갱신할 수 있다.
+실행 시 DB write가 발생하므로 정적 분석 목적에서는 실행하지 않는다.
+"""
+
 import sys
 from pathlib import Path
 from datetime import date

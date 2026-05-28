@@ -1,3 +1,9 @@
+"""
+단일 strategy_execution_order를 지정해 수동으로 connector 주문을 실행하는 entrypoint.
+execution mode 검증, connector BUY/SELL 호출, 주문 결과 DB 반영 경로가 있다.
+--execute 사용 여부와 관계없이 일부 DB update가 가능하므로 승인 없이 실행하지 않는다.
+"""
+
 import argparse
 import sys
 from pathlib import Path
@@ -361,6 +367,10 @@ def build_result_payload(order, execution_mode, sizing_policy, connector_result=
 
 
 def execute_connector_order(order, sizing_policy):
+    """
+    action_type에 따라 connector BUY 또는 SELL API를 호출한다.
+    실제 주문 요청으로 이어지는 함수이므로 검증/문서화 작업에서는 호출하지 않는다.
+    """
     action_type = order["action_type"]
     executed_order_qty = sizing_policy["executed_order_qty"]
 

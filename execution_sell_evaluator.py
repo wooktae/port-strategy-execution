@@ -1,3 +1,9 @@
+"""
+포지션, 종목 feature, 시장 feature를 기준으로 SELL/HOLD 판단을 계산한다.
+DB나 connector에는 접근하지 않는 순수 평가 helper 성격이지만 전략 판단 정책을 담고 있다.
+점수 기준과 sell reason 변경은 전략 결과 변화로 이어지므로 별도 검토가 필요하다.
+"""
+
 from decimal import Decimal
 
 

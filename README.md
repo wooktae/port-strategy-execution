@@ -13,6 +13,7 @@
 - connector 주문/체결 결과를 읽어 `strategy_execution_order` 상태를 동기화할 수 있다.
 - BUY fill을 기준으로 `strategy_position_state` OPEN 포지션을 생성할 수 있다.
 - 장중 포지션을 모니터링해 intraday stop SELL 후보를 만들 수 있다.
+- AWS Migration 전 초기 정리를 위해 전체 파일 카탈로그와 파일별 설명 주석을 유지한다.
 
 ## 실행 주의사항
 
@@ -184,6 +185,14 @@ execution,decision,research,connector,preprocessor,interest,reference,legacy,pub
 public에 있던 테이블은 각 domain schema로 이동되었으며, 이 모듈의 기존 SQL은 schema-qualified table name을 강제하지 않고 위 search_path 기반으로 동작한다. 따라서 `strategy_execution_order`, `strategy_execution_plan`, `strategy_position_state`, `connector_order_request`, `connector_fill` 같은 기존 테이블명 참조는 search_path 순서에 따라 `execution` 또는 `connector` schema의 테이블을 해석한다.
 
 세부 DB 구조와 운영 주의사항은 `docs/database.md`를 참고한다.
+
+## 파일 카탈로그와 주석 정리
+
+전체 소스/문서 파일별 역할과 운영 주의사항은 `docs/source-file-catalog.md`에 정리한다.
+
+2026-05-28 기준으로 Python 파일 상단에는 한글 module docstring을 추가해 각 파일의 역할, DB 접근, connector/API 호출 가능성을 설명했다. 자동 주문, fill sync, position sync, intraday monitor처럼 운영 영향이 큰 함수에는 짧은 function docstring을 추가했다.
+
+이번 정리는 문서화와 설명 주석 추가만 포함하며 기능 로직, SQL 결과 의미, 실행 순서, endpoint, URL은 변경하지 않는다.
 
 ## 외부 의존성
 

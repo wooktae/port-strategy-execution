@@ -1,3 +1,9 @@
+"""
+READY 상태의 daily BUY execution order를 connector BUY 요청으로 제출하는 entrypoint.
+connector_buy.buy_stock 호출과 strategy_execution_order 상태 갱신이 발생할 수 있다.
+자동 주문 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
+"""
+
 import argparse
 import sys
 from pathlib import Path
@@ -340,6 +346,10 @@ def print_candidate(order, index):
 
 
 def execute_one_auto_buy(conn, order):
+    """
+    단일 BUY execution order를 검증한 뒤 connector BUY를 호출하고 결과를 DB에 반영한다.
+    connector 주문 요청 생성과 상태 update가 함께 일어나는 운영상 핵심 함수다.
+    """
     execution_order_id = order["id"]
 
     # -------------------------------------------------

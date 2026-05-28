@@ -1,3 +1,9 @@
+"""
+BUY 주문 후보의 주문 가능 금액과 수량을 계산하는 sizing helper.
+목표 비중, 현금, 최소 주문 금액 기준을 다루며 DB나 외부 API에는 접근하지 않는다.
+계산 정책 변경은 실제 주문 규모에 영향을 주므로 별도 검토가 필요하다.
+"""
+
 from decimal import Decimal, ROUND_DOWN
 
 

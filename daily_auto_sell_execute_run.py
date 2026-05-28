@@ -1,3 +1,9 @@
+"""
+READY 상태의 SELL execution order를 connector SELL 요청으로 제출하는 entrypoint.
+daily position sell과 intraday stop sell 주문을 모두 다룰 수 있으며 포지션 상태를 갱신한다.
+자동 매도 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
+"""
+
 import argparse
 import sys
 from pathlib import Path
@@ -438,6 +444,10 @@ def print_candidate(order, index):
 
 
 def execute_one_auto_sell(conn, order):
+    """
+    단일 SELL execution order를 검증한 뒤 connector SELL을 호출하고 결과를 DB에 반영한다.
+    성공 시 strategy_position_state를 SELL_ORDERED로 바꾸는 경로가 포함된다.
+    """
     execution_order_id = order["id"]
 
     # -------------------------------------------------

@@ -1,5 +1,11 @@
 # C:\Workspaces\port_strategy_execution\daily_buy_execution_run.py
 
+"""
+Daily BUY signal을 기반으로 실행 주문 후보를 생성하는 배치 entrypoint.
+계좌/잔고, 최신 daily run, BUY signal을 DB에서 읽고 strategy_execution_order를 저장할 수 있다.
+실행 시 DB write가 발생하므로 명시 승인 없이 실행하지 않는다.
+"""
+
 import sys
 from pathlib import Path
 from datetime import date

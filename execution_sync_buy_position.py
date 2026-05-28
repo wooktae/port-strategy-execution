@@ -1,3 +1,9 @@
+"""
+FILLED BUY execution order를 strategy_position_state OPEN 포지션으로 동기화한다.
+connector 주문/체결 정보를 조회해 포지션 row를 생성하고 execution order payload를 갱신한다.
+포지션 생성 DB write가 발생하므로 명시 승인 없이 실행하지 않는다.
+"""
+
 from decimal import Decimal
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one

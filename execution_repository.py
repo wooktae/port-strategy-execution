@@ -1,5 +1,11 @@
 # C:\Workspaces\port_strategy_execution\execution_repository.py
 
+"""
+execution 모듈의 DB repository 함수 모음.
+strategy_execution_plan/order, position_state, daily decision, intraday check를 insert/update할 수 있다.
+connector 계좌/잔고/주문/체결/snapshot 조회 경로도 포함하므로 SQL 의미와 상태 전이를 임의로 바꾸지 않는다.
+"""
+
 import json
 from decimal import Decimal
 
@@ -728,6 +734,10 @@ def mark_execution_order_manual_test(conn, execution_order_id):
     )
 
 def mark_execution_order_submitted(conn, execution_order_id, connector_order_request_id, result_payload):
+    """
+    connector 주문 접수 결과를 strategy_execution_order에 SUBMITTED 상태로 반영한다.
+    connector_order_request_id 연결은 후속 fill sync의 기준이 된다.
+    """
     sql = """
         UPDATE strategy_execution_order
         SET

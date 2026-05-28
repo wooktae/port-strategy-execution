@@ -1,5 +1,11 @@
 # C:\Workspaces\port_strategy_execution\execution_daily_signal_builder.py
 
+"""
+Daily BUY signal을 strategy_execution_order 저장 데이터로 변환하는 builder.
+계좌/잔고, 기존 포지션, 최신가, 미체결 주문을 조회해 BUY 주문 후보와 검증 payload를 만든다.
+수량 산정은 execution_buy_sizing 정책을 사용한다.
+"""
+
 from decimal import Decimal
 
 from execution_config import MIN_ORDER_AMOUNT

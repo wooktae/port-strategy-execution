@@ -1,5 +1,11 @@
 # C:\Workspaces\port_strategy_execution\execution_builder.py
 
+"""
+backtest buy/sell 후보를 strategy_execution_order 저장 데이터로 변환하는 builder.
+DB repository helper를 일부 조회 용도로 사용하며 실제 저장은 호출자 entrypoint에서 수행한다.
+주문 수량, 금액, validation payload 계산 의미가 바뀌지 않도록 주의한다.
+"""
+
 from decimal import Decimal, ROUND_DOWN
 
 from execution_config import MIN_ORDER_AMOUNT

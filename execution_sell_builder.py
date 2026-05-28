@@ -1,5 +1,11 @@
 ﻿# C:\Workspaces\port_strategy_execution\execution_sell_builder.py
 
+"""
+OPEN 포지션을 평가해 POSITION_SELL execution order 후보를 생성하는 builder/entrypoint.
+position loader, sell evaluator, repository update를 결합하며 DB write가 발생할 수 있다.
+운영 실행 순서와 포지션 상태 갱신 정책을 임의로 바꾸지 않는다.
+"""
+
 from decimal import Decimal
 
 from execution_db import get_conn

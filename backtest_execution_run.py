@@ -1,5 +1,11 @@
 ﻿# C:\Workspaces\port_strategy_execution\backtest_execution_run.py
 
+"""
+Backtest trade log를 execution order 후보로 변환하는 실행 스크립트.
+최신 전략 run, market daily, buy/sell 후보를 DB에서 읽고 plan/order를 저장할 수 있다.
+운영 DB write가 발생할 수 있으므로 문서화/검토 작업에서는 실행하지 않는다.
+"""
+
 import argparse
 from datetime import datetime
 

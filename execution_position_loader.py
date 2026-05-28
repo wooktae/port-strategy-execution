@@ -1,5 +1,11 @@
 ﻿# C:\Workspaces\port_strategy_execution\execution_position_loader.py
 
+"""
+OPEN strategy_position_state와 connector position snapshot을 결합하는 loader.
+포지션 평가와 SELL builder가 사용할 context를 만들며 DB 조회를 수행한다.
+파일 하단에 실행 가능한 main이 있으므로 단순 import 대상인지 확인하고 다룬다.
+"""
+
 from datetime import date
 from decimal import Decimal
 

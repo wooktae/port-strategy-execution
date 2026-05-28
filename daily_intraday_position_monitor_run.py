@@ -1,3 +1,9 @@
+"""
+OPEN strategy position을 장중 점검하고 손절 후보를 판단하는 monitor entrypoint.
+connector 실시간 현재가 조회, intraday 점검 결과 저장, INTRADAY_STOP_SELL 주문 생성 경로가 있다.
+외부 API 조회와 DB write 가능성이 있으므로 명시 승인 없이 실행하지 않는다.
+"""
+
 import argparse
 import sys
 from decimal import Decimal, ROUND_HALF_UP
@@ -178,6 +184,10 @@ def calculate_rate(current_price, base_price):
 
 
 def build_monitor_result(position, connector_snapshot, quote_result, hard_stop_rate):
+    """
+    포지션, connector snapshot, 현재가 응답을 결합해 장중 점검 결과를 만든다.
+    손절 여부와 warning을 계산하지만 저장은 호출 흐름에서 별도로 수행한다.
+    """
     entry_price = to_decimal(position.get("entry_price"))
     remaining_qty = to_int(position.get("remaining_qty"))
     ticker_code = position.get("ticker_code")
@@ -286,29 +296,20 @@ def should_save_intraday_check(monitor_result, created_execution_order_id=None):
     """
     Intraday Monitor 결과 저장 여부 판단.
 
-    1차 정책:
+    운영 화면 기준:
+    - 장중 포지션 점검 버튼을 실행했으면 정상 결과도 저장한다.
+    - 그래야 Daily Batch 화면의 "최근 장중 포지션 점검 결과"가
+      실제 마지막 점검 결과로 갱신된다.
+
+    저장 대상:
+    - 정상 점검
     - warning 존재
+    - 손절 후보
     - 주문 생성됨
     - 현재가 조회 실패
-
-    주의:
-    - should_stop 자체는 여기서 저장하지 않는다.
-    - should_stop은 --create-order 여부에 따라 main flow에서 별도 저장한다.
     """
 
-    warnings = monitor_result.get("warnings") or []
-    current_price = to_decimal(monitor_result.get("current_price"))
-
-    if warnings:
-        return True
-
-    if created_execution_order_id is not None:
-        return True
-
-    if current_price <= 0:
-        return True
-
-    return False
+    return True
 
 def build_intraday_stop_order_data(position, connector_snapshot, monitor_result, latest_plan):
     """
@@ -448,6 +449,7 @@ def build_intraday_stop_order_data(position, connector_snapshot, monitor_result,
 def create_intraday_stop_orders(conn, positions, stop_candidates):
     """
     stop_candidates에 대해 INTRADAY_STOP_SELL READY 주문 생성.
+    strategy_execution_order 및 strategy_intraday_position_check write가 발생한다.
     """
 
     if not stop_candidates:
@@ -606,19 +608,7 @@ def main():
         if not args.create_order:
             print()
             print("조회/검증만 완료. INTRADAY_STOP_SELL READY 주문 생성은 --create-order 필요.")
-
-            for candidate in stop_candidates:
-                saved = insert_intraday_position_check(
-                    conn=conn,
-                    monitor_result=candidate,
-                )
-
-                print(
-                    f"[SAVED] intraday_check_id={saved['id']} "
-                    f"position_state_id={candidate['position_state_id']} "
-                    f"ticker={candidate['ticker_code']} "
-                    f"reason={candidate['stop_reason']}"
-                )
+            print("점검 결과는 position loop에서 이미 저장됨.")
 
             conn.commit()
             return
