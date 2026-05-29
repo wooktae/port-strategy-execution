@@ -11,7 +11,7 @@ from decimal import Decimal
 from execution_repository import dumps_json
 
 
-DEFAULT_EXECUTION_MODE = "REVIEW"
+DEFAULT_EXECUTION_MODE = "PAPER_STRATEGY"
 DEFAULT_ORDER_METHOD = "MARKET"
 
 
