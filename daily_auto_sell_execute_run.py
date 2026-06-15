@@ -1,43 +1,21 @@
 """
-READY 상태의 SELL execution order를 connector SELL 요청으로 제출하는 entrypoint.
-daily position sell과 intraday stop sell 주문을 모두 다룰 수 있으며 포지션 상태를 갱신한다.
-자동 매도 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
+READY 상태의 SELL execution order를 MarketConnector SELL 실행 요청으로 표시하는 entrypoint.
+Strategy Execution은 실제 주문 제출 없이 REQUESTED 상태 전환까지만 수행한다.
+자동 매도 요청 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
 """
 
 import argparse
 import sys
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timezone
 
 from execution_db import get_conn
-from execution_config import STRATEGY_NAME, STRATEGY_VERSION
 from execution_repository import (
     get_ready_daily_position_sell_execution_orders,
     get_latest_connector_position_snapshot,
     mark_execution_order_execution_mode,
-    mark_execution_order_submitted,
-    mark_execution_order_execute_failed,
-    mark_position_sell_ordered,
+    mark_execution_order_requested,
 )
-
-# -------------------------------------------------
-# Market Connector import path
-# -------------------------------------------------
-CONNECTOR_PATH = Path(r"C:\Workspaces\port-marketconnector").resolve()
-
-if not CONNECTOR_PATH.exists():
-    raise RuntimeError(f"Market Connector 경로가 없음: {CONNECTOR_PATH}")
-
-sys.path.insert(0, str(CONNECTOR_PATH))
-
-try:
-    from connector_sell import sell_stock  # noqa: E402
-except ModuleNotFoundError as e:
-    print("[IMPORT ERROR]")
-    print(f"CONNECTOR_PATH = {CONNECTOR_PATH}")
-    print(f"sys.path[0]    = {sys.path[0]}")
-    print("connector_sell.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요")
-    raise e
 
 
 EXECUTION_MODE_PAPER_STRATEGY = "PAPER_STRATEGY"
@@ -46,8 +24,6 @@ SUPPORTED_AUTO_SELL_SOURCE_TYPES = {
     "DAILY_POSITION_SELL",
     "INTRADAY_STOP_SELL",
 }
-
-ACCEPTED_REQUEST_STATUSES = {"SUBMITTED", "ACCEPTED", "ORDERED"}
 
 # -------------------------------------------------
 # Korean business day guard
@@ -142,7 +118,7 @@ def parse_args():
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="실제 Connector SELL 주문 실행. 없으면 조회/검증만 수행",
+        help="MarketConnector SELL 실행 요청 등록. 없으면 조회/검증만 수행",
     )
 
     return parser.parse_args()
@@ -166,13 +142,6 @@ def to_float_or_none(value):
         return float(value)
     except Exception:
         return None
-
-
-def normalize_status(value):
-    if value is None:
-        return None
-
-    return str(value).strip().upper()
 
 
 def validate_auto_sell_order(order):
@@ -223,7 +192,7 @@ def validate_auto_sell_order(order):
 
 def validate_latest_sellable_quantity(conn, order):
     """
-    실제 Connector SELL 호출 직전에 최신 connector_position_snapshot 기준으로
+    MarketConnector SELL 실행 요청 등록 전에 최신 connector_position_snapshot 기준으로
     매도가능수량을 다시 확인한다.
 
     방어 목적:
@@ -296,132 +265,23 @@ def validate_latest_sellable_quantity(conn, order):
 
     return result
 
-def build_connector_kwargs(order):
-    order_qty = to_int(order.get("order_qty"))
-
+def build_result_payload(order, latest_sellable_check=None):
     return {
-        "stock_code": order["ticker_code"],
-        "qty": order_qty,
-        "order_method": order.get("order_method") or "MARKET",
-        "order_price": to_float_or_none(order.get("order_price")),
-        "stock_name": order.get("stock_name"),
-        "strategy_name": STRATEGY_NAME,
-        "strategy_version": STRATEGY_VERSION,
-        "strategy_run_id": (
-            str(order.get("source_run_id"))
-            if order.get("source_run_id") is not None
-            else None
-        ),
-        "strategy_signal_id": order.get("source_daily_position_decision_id"),
-        "signal_date": str(order.get("signal_date")) if order.get("signal_date") is not None else None,
-        "signal_type": "SELL",
-        "signal_score": None,
-        "signal_position_size": None,
-    }
-
-
-def is_connector_order_accepted(result):
-    if not result:
-        return False
-
-    request_status = normalize_status(result.get("request_status"))
-    response = result.get("response") or {}
-    rt_cd = str(response.get("rt_cd")) if response.get("rt_cd") is not None else None
-
-    if request_status in ACCEPTED_REQUEST_STATUSES:
-        return True
-
-    if rt_cd == "0" and result.get("order_request_id") is not None:
-        return True
-
-    return False
-
-
-def build_rejected_error_message(result):
-    if not result:
-        return "connector SELL result is empty"
-
-    if result.get("error"):
-        return str(result.get("error"))
-
-    response_message = result.get("response_message")
-    if response_message:
-        return str(response_message)
-
-    response = result.get("response") or {}
-    msg1 = response.get("msg1")
-    if msg1:
-        return str(msg1).strip()
-
-    return "connector SELL rejected or unknown response"
-
-
-def build_result_payload(order, connector_result=None, error=None, latest_sellable_check=None):
-    payload = {
-        "request_type": "SELL",
         "source": "daily_auto_sell_execute_run",
-        "strategy_name": STRATEGY_NAME,
-        "strategy_version": STRATEGY_VERSION,
-
+        "action": "REQUEST_MARKETCONNECTOR_SELL",
         "execution_order_id": order.get("id"),
-        "execution_plan_id": order.get("execution_plan_id"),
+        "ticker_code": order.get("ticker_code"),
+        "order_qty": to_int(order.get("order_qty"), 0),
+        "order_method": order.get("order_method"),
         "execution_mode": EXECUTION_MODE_PAPER_STRATEGY,
+        "source_position_state_id": order.get("source_position_state_id"),
+        "latest_sellable_check": latest_sellable_check,
+        "requested_at": datetime.now(timezone.utc).isoformat(),
         "sizing_policy": SIZING_POLICY,
-
         "source_type": order.get("source_type"),
         "source_daily_run_id": order.get("source_daily_run_id"),
         "source_daily_position_decision_id": order.get("source_daily_position_decision_id"),
-        "source_position_state_id": order.get("source_position_state_id"),
-
-        "ticker_code": order.get("ticker_code"),
-        "stock_name": order.get("stock_name"),
-        "current_qty": str(order.get("current_qty")) if order.get("current_qty") is not None else None,
-        "order_qty": str(order.get("order_qty")) if order.get("order_qty") is not None else None,
-        "order_price": str(order.get("order_price")) if order.get("order_price") is not None else None,
-        "order_method": order.get("order_method"),
-
-        "expected_sell_price": (
-            str(order.get("expected_sell_price"))
-            if order.get("expected_sell_price") is not None
-            else None
-        ),
-        "expected_pnl_amount": (
-            str(order.get("expected_pnl_amount"))
-            if order.get("expected_pnl_amount") is not None
-            else None
-        ),
-        "expected_pnl_rate": (
-            str(order.get("expected_pnl_rate"))
-            if order.get("expected_pnl_rate") is not None
-            else None
-        ),
-        "sell_reason": order.get("sell_reason"),
-
-        "environment": order.get("environment"),
-        "latest_sellable_check": latest_sellable_check,
-
-        "auto_execute": True,
-        "auto_execute_type": "DAILY_POSITION_SELL_PAPER_STRATEGY",
-
-        "connector_acceptance_check": {
-            "accepted": is_connector_order_accepted(connector_result),
-            "request_status": connector_result.get("request_status") if connector_result else None,
-            "response_code": connector_result.get("response_code") if connector_result else None,
-            "response_message": connector_result.get("response_message") if connector_result else None,
-            "broker_order_no": connector_result.get("broker_order_no") if connector_result else None,
-            "broker_branch_code": connector_result.get("broker_branch_code") if connector_result else None,
-            "order_request_id": connector_result.get("order_request_id") if connector_result else None,
-        },
-        
     }
-
-    if connector_result is not None:
-        payload["connector_result"] = connector_result
-
-    if error is not None:
-        payload["error"] = error
-
-    return payload
 
 
 def print_candidate(order, index):
@@ -445,36 +305,17 @@ def print_candidate(order, index):
 
 def execute_one_auto_sell(conn, order):
     """
-    단일 SELL execution order를 검증한 뒤 connector SELL을 호출하고 결과를 DB에 반영한다.
-    성공 시 strategy_position_state를 SELL_ORDERED로 바꾸는 경로가 포함된다.
+    단일 SELL execution order를 검증한 뒤 MarketConnector 실행 요청 상태로 전환한다.
+    실제 주문 제출, connector_order_request 생성, 포지션 sell ordered 변경은 수행하지 않는다.
     """
     execution_order_id = order["id"]
 
-    # -------------------------------------------------
-    # 1. execution_mode를 PAPER_STRATEGY로 전환
-    # -------------------------------------------------
-    updated = mark_execution_order_execution_mode(
-        conn=conn,
-        execution_order_id=execution_order_id,
-        execution_mode=EXECUTION_MODE_PAPER_STRATEGY,
-    )
-    conn.commit()
-
-    print()
-    print(
-        f"[MODE] execution_order_id={updated['id']} "
-        f"execution_mode={updated['execution_mode']} "
-        f"status={updated['execution_status']}"
-    )
-
-    # -------------------------------------------------
-    # 2. 실제 Connector SELL 호출 직전 최신 매도가능수량 재검증
-    # -------------------------------------------------
     latest_sellable_check = validate_latest_sellable_quantity(
         conn=conn,
         order=order,
     )
 
+    print()
     print(
         f"[LATEST SELLABLE CHECK] "
         f"ok={latest_sellable_check['ok']} "
@@ -485,111 +326,45 @@ def execute_one_auto_sell(conn, order):
     )
 
     if not latest_sellable_check["ok"]:
-        failed_payload = build_result_payload(
-            order=order,
-            connector_result=None,
-            error=latest_sellable_check["reason"],
-            latest_sellable_check=latest_sellable_check,
-        )
-
-        failed = mark_execution_order_execute_failed(
-            conn=conn,
-            execution_order_id=execution_order_id,
-            result_payload=failed_payload,
-        )
-
-        conn.commit()
-
         print(
-            f"[FAILED] execution_order_id={failed['id']} "
-            f"status={failed['execution_status']} "
+            f"[BLOCKED] execution_order_id={execution_order_id} "
             f"reason={latest_sellable_check['reason']}"
         )
+        return None
 
-        return failed
-
-    # -------------------------------------------------
-    # 3. Connector SELL 호출
-    # -------------------------------------------------
-    kwargs = build_connector_kwargs(order)
+    updated = mark_execution_order_execution_mode(
+        conn=conn,
+        execution_order_id=execution_order_id,
+        execution_mode=EXECUTION_MODE_PAPER_STRATEGY,
+    )
 
     print(
-        f"[CONNECTOR SELL] "
-        f"ticker={order['ticker_code']} "
-        f"name={order['stock_name']} "
-        f"qty={kwargs['qty']} "
-        f"policy={SIZING_POLICY}"
+        f"[MODE] execution_order_id={updated['id']} "
+        f"execution_mode={updated['execution_mode']} "
+        f"status={updated['execution_status']}"
     )
 
-    result = sell_stock(**kwargs)
-
-    # -------------------------------------------------
-    # 3. Connector 결과 판정
-    # -------------------------------------------------
-    if not is_connector_order_accepted(result):
-        error_message = build_rejected_error_message(result)
-
-        failed_payload = build_result_payload(
-            order=order,
-            connector_result=result,
-            error=error_message,
-            latest_sellable_check=latest_sellable_check,
-        )
-
-        failed = mark_execution_order_execute_failed(
-            conn,
-            execution_order_id,
-            failed_payload,
-            connector_order_request_id=(
-                result.get("order_request_id")
-                if result
-                else None
-            ),
-        )
-        conn.commit()
-
-        print(
-            f"[FAILED] execution_order_id={failed['id']} "
-            f"status={failed['execution_status']} "
-            f"connector_order_request_id={result.get('order_request_id') if result else None}"
-        )
-        print(f"reason={error_message}")
-        print(result)
-        return failed
-
-    # -------------------------------------------------
-    # 4. 접수 성공 시 SUBMITTED 저장
-    # -------------------------------------------------
-    submitted_payload = build_result_payload(
+    requested_payload = build_result_payload(
         order=order,
-        connector_result=result,
         latest_sellable_check=latest_sellable_check,
     )
-
-    submitted = mark_execution_order_submitted(
-        conn,
-        execution_order_id,
-        result["order_request_id"],
-        submitted_payload,
+    requested = mark_execution_order_requested(
+        conn=conn,
+        execution_order_id=execution_order_id,
+        result_payload=requested_payload,
     )
-
-    if order.get("source_position_state_id"):
-        mark_position_sell_ordered(
-            conn,
-            order["source_position_state_id"],
-        )
-
     conn.commit()
 
     print(
-        f"[SUBMITTED] execution_order_id={submitted['id']} "
-        f"status={submitted['execution_status']} "
-        f"mode={submitted['execution_mode']} "
-        f"connector_order_request_id={submitted['connector_order_request_id']} "
-        f"broker_order_no={result.get('broker_order_no')}"
+        f"[REQUESTED] execution_order_id={requested['id']} "
+        f"status={requested['execution_status']} "
+        f"mode={requested['execution_mode']} "
+        f"connector_order_request_id={requested['connector_order_request_id']} "
+        f"action={requested['action_type']} "
+        f"source_type={requested['source_type']}"
     )
 
-    return submitted
+    return requested
 
 
 def main():
@@ -646,19 +421,19 @@ def main():
 
         if not args.execute:
             print()
-            print("조회/검증만 완료. 실제 자동매도 실행은 --execute 필요.")
+            print("조회/검증만 완료. REQUESTED 전환은 --execute 필요.")
             conn.rollback()
             return
 
         print_header("[Auto SELL Execute]")
         print("자동매도는 PAPER_STRATEGY 모드만 허용됨.")
-        print("전략 order_qty 그대로 Connector SELL 호출.")
+        print("전략 order_qty 그대로 MarketConnector SELL 실행 요청 등록.")
 
         for order in executable_orders:
             execute_one_auto_sell(conn, order)
 
         print_header("[DONE]")
-        print("Daily Position 자동매도 실행 완료")
+        print("Daily Position 자동매도 REQUESTED 전환 완료")
 
     except Exception as e:
         conn.rollback()

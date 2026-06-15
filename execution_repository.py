@@ -733,6 +733,35 @@ def mark_execution_order_manual_test(conn, execution_order_id):
         execution_mode="MANUAL_TEST",
     )
 
+def mark_execution_order_requested(conn, execution_order_id, result_payload):
+    """
+    READY strategy_execution_order를 MarketConnector 실행 요청 대상으로 표시한다.
+    connector_order_request_id는 MarketConnector executor가 주문 요청을 만들 때 연결한다.
+    """
+    sql = """
+        UPDATE strategy_execution_order
+        SET
+            execution_status = 'REQUESTED',
+            result_payload = %(result_payload)s,
+            updated_at = now()
+        WHERE id = %(execution_order_id)s
+          AND execution_status = 'READY'
+          AND connector_order_request_id IS NULL
+        RETURNING
+            id,
+            execution_status,
+            execution_mode,
+            connector_order_request_id,
+            action_type,
+            source_type
+    """
+
+    return execute_one(conn, sql, {
+        "execution_order_id": execution_order_id,
+        "result_payload": dumps_json(result_payload),
+    })
+
+
 def mark_execution_order_submitted(conn, execution_order_id, connector_order_request_id, result_payload):
     """
     connector 주문 접수 결과를 strategy_execution_order에 SUBMITTED 상태로 반영한다.
