@@ -71,12 +71,20 @@ def get_filled_buy_execution_orders_without_position(conn):
             seo.created_at,
             seo.updated_at
         FROM strategy_execution_order seo
-        LEFT JOIN strategy_position_state ps
-          ON ps.source_buy_execution_order_id = seo.id
         WHERE seo.action_type = 'BUY'
           AND seo.execution_status = 'FILLED'
           AND seo.connector_order_request_id IS NOT NULL
-          AND ps.id IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM strategy_position_state ps
+              WHERE ps.source_buy_execution_order_id = seo.id
+                 OR ps.buy_info ->> 'execution_order_id' = seo.id::text
+                 OR EXISTS (
+                     SELECT 1
+                     FROM jsonb_array_elements(COALESCE(ps.buy_info -> 'additional_buys', '[]'::jsonb)) add_buy
+                     WHERE add_buy ->> 'execution_order_id' = seo.id::text
+                 )
+          )
         ORDER BY seo.id ASC
     """
 
@@ -202,6 +210,250 @@ def build_buy_info(execution_order, order_request, fill_summary):
         "signal_position_size": str(execution_order.get("signal_position_size")),
         "target_amount": str(execution_order.get("target_amount")),
     }
+
+
+
+def get_open_position_state(conn, account_id, ticker_code):
+    """
+    동일 계좌/종목의 OPEN position_state를 row lock과 함께 조회한다.
+
+    추가매수 허용 정책에서는 기존 OPEN 포지션이 있으면 신규 INSERT가 아니라
+    기존 position_state에 fill을 병합해야 한다.
+    """
+
+    sql = """
+        SELECT
+            id,
+            account_id,
+            account_no,
+            ticker_code,
+            stock_name,
+            source_buy_execution_order_id,
+            source_connector_order_request_id,
+            source_connector_fill_id,
+            entry_date,
+            entry_price,
+            entry_qty,
+            remaining_qty,
+            position_status,
+            last_evaluated_date,
+            latest_sell_reason,
+            latest_sell_info,
+            latest_validation_result,
+            buy_info,
+            memo,
+            created_at,
+            updated_at
+        FROM strategy_position_state
+        WHERE account_id = %(account_id)s
+          AND ticker_code = %(ticker_code)s
+          AND position_status = 'OPEN'
+        ORDER BY id ASC
+        LIMIT 1
+        FOR UPDATE
+    """
+
+    return fetch_one(conn, sql, {
+        "account_id": account_id,
+        "ticker_code": ticker_code,
+    })
+
+
+def normalize_buy_info(value):
+    if value is None:
+        return {}
+
+    if isinstance(value, dict):
+        return dict(value)
+
+    return {}
+
+
+def same_id(left, right):
+    if left is None or right is None:
+        return False
+    return str(left) == str(right)
+
+
+def buy_info_has_execution_order(buy_info, execution_order_id, order_request_id=None):
+    """
+    같은 execution_order / connector_order_request가 이미 position_state.buy_info에
+    반영되어 있는지 확인한다. Step 16 재실행 시 추가매수 중복 반영을 방지한다.
+    """
+
+    buy_info = normalize_buy_info(buy_info)
+
+    if same_id(buy_info.get("execution_order_id"), execution_order_id):
+        return True
+
+    if order_request_id is not None and same_id(buy_info.get("connector_order_request_id"), order_request_id):
+        return True
+
+    for add_buy in buy_info.get("additional_buys") or []:
+        if not isinstance(add_buy, dict):
+            continue
+
+        if same_id(add_buy.get("execution_order_id"), execution_order_id):
+            return True
+
+        if order_request_id is not None and same_id(add_buy.get("connector_order_request_id"), order_request_id):
+            return True
+
+    return False
+
+
+def build_additional_buy_info(execution_order, order_request, fill_summary):
+    return {
+        "source": "execution_sync_buy_position",
+        "merge_type": "ADDITIONAL_BUY",
+        "execution_order_id": execution_order.get("id"),
+        "execution_plan_id": execution_order.get("execution_plan_id"),
+        "source_type": execution_order.get("source_type"),
+        "execution_mode": execution_order.get("execution_mode"),
+        "source_trade_log_id": execution_order.get("source_trade_log_id"),
+        "source_run_id": execution_order.get("source_run_id"),
+        "connector_order_request_id": order_request.get("id"),
+        "connector_request_status": order_request.get("request_status"),
+        "broker_order_no": order_request.get("broker_order_no"),
+        "broker_branch_code": order_request.get("broker_branch_code"),
+        "fill_ids": fill_summary["fill_ids"],
+        "source_connector_fill_id": fill_summary["first_fill_id"],
+        "add_qty": fill_summary["total_fill_qty"],
+        "add_amount": str(fill_summary["total_fill_amount"]),
+        "avg_fill_price": str(fill_summary["avg_fill_price"]),
+        "first_fill_ts": str(fill_summary["first_fill_ts"]),
+        "latest_fill_ts": str(fill_summary["latest_fill_ts"]),
+        "signal_date": str(execution_order.get("signal_date")),
+        "signal_type": execution_order.get("signal_type"),
+        "signal_score": str(execution_order.get("signal_score")),
+        "signal_position_size": str(execution_order.get("signal_position_size")),
+        "target_amount": str(execution_order.get("target_amount")),
+    }
+
+
+def merge_open_position_state(conn, existing_position, execution_order, order_request, fill_summary):
+    """
+    추가매수 fill을 기존 OPEN position_state에 병합한다.
+
+    - 최초 entry_date는 유지한다.
+    - entry_qty / remaining_qty는 추가매수 수량만큼 증가한다.
+    - entry_price는 기존 평균단가와 추가매수 금액을 가중평균해 재계산한다.
+    - buy_info.additional_buys에 추가매수 이력을 누적한다.
+    - 동일 execution_order_id 또는 connector_order_request_id가 이미 기록되어 있으면
+      수량/금액을 다시 더하지 않고 기존 row만 반환한다.
+    """
+
+    buy_info = normalize_buy_info(existing_position.get("buy_info"))
+    execution_order_id = execution_order.get("id")
+    order_request_id = order_request.get("id")
+
+    if buy_info_has_execution_order(
+        buy_info=buy_info,
+        execution_order_id=execution_order_id,
+        order_request_id=order_request_id,
+    ):
+        return existing_position
+
+    old_entry_qty = to_int(existing_position.get("entry_qty"))
+    old_remaining_qty = to_int(existing_position.get("remaining_qty"))
+    old_entry_price = to_decimal(existing_position.get("entry_price"))
+
+    add_qty = to_int(fill_summary["total_fill_qty"])
+    add_amount = to_decimal(fill_summary["total_fill_amount"])
+
+    old_amount = old_entry_price * Decimal(old_entry_qty)
+    new_entry_qty = old_entry_qty + add_qty
+    new_remaining_qty = old_remaining_qty + add_qty
+    new_amount = old_amount + add_amount
+
+    new_entry_price = Decimal("0")
+    if new_entry_qty > 0:
+        new_entry_price = new_amount / Decimal(new_entry_qty)
+
+    additional_buys = list(buy_info.get("additional_buys") or [])
+    additional_buys.append(build_additional_buy_info(
+        execution_order=execution_order,
+        order_request=order_request,
+        fill_summary=fill_summary,
+    ))
+
+    buy_info["additional_buys"] = additional_buys
+    buy_info["latest_additional_buy"] = additional_buys[-1]
+    buy_info["merged_entry_qty"] = new_entry_qty
+    buy_info["merged_remaining_qty"] = new_remaining_qty
+    buy_info["merged_entry_price"] = str(new_entry_price)
+    buy_info["merged_entry_amount"] = str(new_amount)
+
+    sql = """
+        UPDATE strategy_position_state
+        SET
+            source_buy_execution_order_id = %(source_buy_execution_order_id)s,
+            source_connector_order_request_id = %(source_connector_order_request_id)s,
+            source_connector_fill_id = %(source_connector_fill_id)s,
+            entry_price = %(entry_price)s,
+            entry_qty = %(entry_qty)s,
+            remaining_qty = %(remaining_qty)s,
+            position_status = 'OPEN',
+            buy_info = %(buy_info)s::jsonb,
+            memo = CONCAT_WS(E'\n', NULLIF(memo, ''), %(memo)s),
+            updated_at = now()
+        WHERE id = %(position_state_id)s
+        RETURNING
+            id,
+            account_no,
+            ticker_code,
+            stock_name,
+            source_buy_execution_order_id,
+            source_connector_order_request_id,
+            source_connector_fill_id,
+            entry_date,
+            entry_price,
+            entry_qty,
+            remaining_qty,
+            position_status,
+            buy_info,
+            created_at,
+            updated_at
+    """
+
+    return execute_one(conn, sql, {
+        "position_state_id": existing_position.get("id"),
+        "source_buy_execution_order_id": execution_order_id,
+        "source_connector_order_request_id": order_request_id,
+        "source_connector_fill_id": fill_summary["first_fill_id"],
+        "entry_price": new_entry_price,
+        "entry_qty": new_entry_qty,
+        "remaining_qty": new_remaining_qty,
+        "buy_info": dumps_json(buy_info),
+        "memo": "Merged ADDITIONAL BUY fill by execution_sync_buy_position",
+    })
+
+
+def sync_position_state_for_buy_order(conn, execution_order, order_request, fill_summary):
+    account_id = order_request.get("account_id")
+    ticker_code = order_request.get("ticker_code") or execution_order.get("ticker_code")
+
+    existing_position = get_open_position_state(
+        conn=conn,
+        account_id=account_id,
+        ticker_code=ticker_code,
+    )
+
+    if existing_position:
+        return merge_open_position_state(
+            conn=conn,
+            existing_position=existing_position,
+            execution_order=execution_order,
+            order_request=order_request,
+            fill_summary=fill_summary,
+        )
+
+    return create_position_state(
+        conn=conn,
+        execution_order=execution_order,
+        order_request=order_request,
+        fill_summary=fill_summary,
+    )
 
 
 def create_position_state(conn, execution_order, order_request, fill_summary):
@@ -391,7 +643,7 @@ def sync_one_order(conn, execution_order):
             "reason": "TOTAL_FILL_QTY_ZERO",
         }
 
-    position_state = create_position_state(
+    position_state = sync_position_state_for_buy_order(
         conn=conn,
         execution_order=execution_order,
         order_request=order_request,
