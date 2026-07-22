@@ -597,7 +597,16 @@ def append_position_sync_result(conn, execution_order, position_state):
     })
 
 
+
 def sync_one_order(conn, execution_order):
+    """
+    FILLED BUY execution order 1건을 OPEN position_state에 반영한다.
+
+    기존 OPEN 포지션이 있으면 추가매수 병합을 허용하고,
+    동일 execution_order가 이미 buy_info에 반영된 멱등 재실행도 정상으로 본다.
+    그 외 Request / Fill / Position / execution payload 불일치는 ERROR로 반환한다.
+    """
+    execution_order_id = execution_order.get("id")
     order_request_id = execution_order.get("connector_order_request_id")
 
     order_request = get_connector_order_request(
@@ -607,16 +616,16 @@ def sync_one_order(conn, execution_order):
 
     if not order_request:
         return {
-            "execution_order_id": execution_order["id"],
-            "status": "SKIP",
+            "execution_order_id": execution_order_id,
+            "status": "ERROR",
             "reason": "CONNECTOR_ORDER_REQUEST_NOT_FOUND",
         }
 
     if order_request.get("request_status") != "FILLED":
         return {
-            "execution_order_id": execution_order["id"],
+            "execution_order_id": execution_order_id,
             "connector_order_request_id": order_request_id,
-            "status": "SKIP",
+            "status": "ERROR",
             "reason": f"CONNECTOR_ORDER_NOT_FILLED:{order_request.get('request_status')}",
         }
 
@@ -627,9 +636,9 @@ def sync_one_order(conn, execution_order):
 
     if not fills:
         return {
-            "execution_order_id": execution_order["id"],
+            "execution_order_id": execution_order_id,
             "connector_order_request_id": order_request_id,
-            "status": "SKIP",
+            "status": "ERROR",
             "reason": "BUY_FILL_NOT_FOUND",
         }
 
@@ -637,9 +646,9 @@ def sync_one_order(conn, execution_order):
 
     if fill_summary["total_fill_qty"] <= 0:
         return {
-            "execution_order_id": execution_order["id"],
+            "execution_order_id": execution_order_id,
             "connector_order_request_id": order_request_id,
-            "status": "SKIP",
+            "status": "ERROR",
             "reason": "TOTAL_FILL_QTY_ZERO",
         }
 
@@ -652,10 +661,51 @@ def sync_one_order(conn, execution_order):
 
     if not position_state:
         return {
-            "execution_order_id": execution_order["id"],
+            "execution_order_id": execution_order_id,
             "connector_order_request_id": order_request_id,
-            "status": "SKIP",
-            "reason": "POSITION_ALREADY_EXISTS_OR_INSERT_SKIPPED",
+            "status": "ERROR",
+            "reason": "POSITION_STATE_NOT_CREATED_OR_MERGED",
+        }
+
+    if not position_state.get("id"):
+        return {
+            "execution_order_id": execution_order_id,
+            "connector_order_request_id": order_request_id,
+            "status": "ERROR",
+            "reason": "POSITION_STATE_ID_MISSING",
+        }
+
+    if position_state.get("position_status") != "OPEN":
+        return {
+            "execution_order_id": execution_order_id,
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state.get("id"),
+            "status": "ERROR",
+            "reason": f"POSITION_STATUS_INVALID:{position_state.get('position_status')}",
+        }
+
+    entry_qty = to_int(position_state.get("entry_qty"))
+    remaining_qty = to_int(position_state.get("remaining_qty"))
+
+    if entry_qty <= 0:
+        return {
+            "execution_order_id": execution_order_id,
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state.get("id"),
+            "status": "ERROR",
+            "reason": f"POSITION_ENTRY_QTY_INVALID:{entry_qty}",
+        }
+
+    if remaining_qty <= 0 or remaining_qty > entry_qty:
+        return {
+            "execution_order_id": execution_order_id,
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state.get("id"),
+            "status": "ERROR",
+            "reason": (
+                "POSITION_REMAINING_QTY_INVALID:"
+                f"remaining={remaining_qty},entry={entry_qty}"
+            ),
         }
 
     execution_update = append_position_sync_result(
@@ -664,8 +714,29 @@ def sync_one_order(conn, execution_order):
         position_state=position_state,
     )
 
+    if not execution_update:
+        return {
+            "execution_order_id": execution_order_id,
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state.get("id"),
+            "status": "ERROR",
+            "reason": "EXECUTION_ORDER_POSITION_SYNC_PAYLOAD_UPDATE_FAILED",
+        }
+
+    if execution_update.get("execution_status") != "FILLED":
+        return {
+            "execution_order_id": execution_order_id,
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state.get("id"),
+            "status": "ERROR",
+            "reason": (
+                "EXECUTION_ORDER_STATUS_INVALID:"
+                f"{execution_update.get('execution_status')}"
+            ),
+        }
+
     return {
-        "execution_order_id": execution_order["id"],
+        "execution_order_id": execution_order_id,
         "connector_order_request_id": order_request_id,
         "position_state_id": position_state.get("id"),
         "status": "SYNCED",
@@ -674,11 +745,13 @@ def sync_one_order(conn, execution_order):
     }
 
 
+
 def print_header(title):
     print()
     print("========================================")
     print(title)
     print("========================================")
+
 
 
 def main():
@@ -689,10 +762,13 @@ def main():
         orders = get_filled_buy_execution_orders_without_position(conn)
 
         print_header("[Execution BUY Position Sync]")
-        print(f"filled_buy_orders_without_position : {len(orders)}")
+
+        target_count = len(orders)
+        print(f"target_count                       : {target_count}")
+        print(f"filled_buy_orders_without_position : {target_count}")
 
         synced_count = 0
-        skipped_count = 0
+        failed_count = 0
         results = []
 
         for order in orders:
@@ -702,12 +778,10 @@ def main():
             if result["status"] == "SYNCED":
                 synced_count += 1
             else:
-                skipped_count += 1
+                failed_count += 1
 
-        conn.commit()
-
-        print(f"synced_count  : {synced_count}")
-        print(f"skipped_count : {skipped_count}")
+        print(f"synced_count : {synced_count}")
+        print(f"failed_count : {failed_count}")
 
         for result in results:
             print()
@@ -730,6 +804,19 @@ def main():
                 print(f"remaining_qty            : {ps.get('remaining_qty')}")
                 print(f"position_status          : {ps.get('position_status')}")
 
+        if failed_count > 0 or synced_count != target_count:
+            raise RuntimeError(
+                "BUY_POSITION_SYNC_VALIDATION_FAILED: "
+                f"target={target_count}, synced={synced_count}, failed={failed_count}"
+            )
+
+        conn.commit()
+
+        print(
+            "BUY_POSITION_SYNC_VALIDATION=SUCCESS "
+            f"target={target_count} synced={synced_count} failed={failed_count}"
+        )
+
     except Exception as e:
         conn.rollback()
         print()
@@ -739,6 +826,7 @@ def main():
 
     finally:
         conn.close()
+
 
 
 if __name__ == "__main__":

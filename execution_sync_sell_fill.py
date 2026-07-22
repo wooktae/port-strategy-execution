@@ -350,13 +350,70 @@ def sync_one_order(conn, execution_order):
         fill_summary=fill_summary,
     )
 
-    position_update = None
-    if execution_order.get("source_position_state_id"):
-        position_update = close_position_after_sell_fill(
-            conn=conn,
-            execution_order=execution_order,
-            fill_summary=fill_summary,
-        )
+    if not execution_update:
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "status": "ERROR",
+            "reason": "EXECUTION_ORDER_UPDATE_NOT_APPLIED",
+        }
+
+    if execution_update.get("execution_status") != "FILLED":
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "status": "ERROR",
+            "reason": (
+                "EXECUTION_ORDER_STATUS_NOT_FILLED:"
+                f"{execution_update.get('execution_status')}"
+            ),
+        }
+
+    position_state_id = execution_order.get("source_position_state_id")
+    if not position_state_id:
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "status": "ERROR",
+            "reason": "SOURCE_POSITION_STATE_ID_MISSING",
+        }
+
+    position_update = close_position_after_sell_fill(
+        conn=conn,
+        execution_order=execution_order,
+        fill_summary=fill_summary,
+    )
+
+    if not position_update:
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state_id,
+            "status": "ERROR",
+            "reason": "POSITION_UPDATE_NOT_APPLIED",
+        }
+
+    if position_update.get("position_status") not in ("OPEN", "CLOSED"):
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state_id,
+            "status": "ERROR",
+            "reason": (
+                "POSITION_STATUS_INVALID:"
+                f"{position_update.get('position_status')}"
+            ),
+        }
+
+    remaining_qty = to_int(position_update.get("remaining_qty"), default=-1)
+    if remaining_qty < 0:
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "position_state_id": position_state_id,
+            "status": "ERROR",
+            "reason": f"POSITION_REMAINING_QTY_INVALID:{remaining_qty}",
+        }
 
     return {
         "execution_order_id": execution_order["id"],
@@ -386,8 +443,9 @@ def main():
         print_header("[Execution SELL Fill Sync]")
         print(f"submitted_position_sell_orders : {len(orders)}")
 
+        target_count = len(orders)
         synced_count = 0
-        skipped_count = 0
+        failed_count = 0
         results = []
 
         for order in orders:
@@ -397,12 +455,11 @@ def main():
             if result["status"] == "SYNCED":
                 synced_count += 1
             else:
-                skipped_count += 1
+                failed_count += 1
 
-        conn.commit()
-
+        print(f"target_count  : {target_count}")
         print(f"synced_count  : {synced_count}")
-        print(f"skipped_count : {skipped_count}")
+        print(f"failed_count  : {failed_count}")
 
         for result in results:
             print()
@@ -421,6 +478,15 @@ def main():
                 print(f"total_fill_qty           : {fs['total_fill_qty']}")
                 print(f"avg_fill_price           : {fs['avg_fill_price']}")
                 print(f"total_fill_amount        : {fs['total_fill_amount']}")
+
+        if failed_count > 0 or synced_count != target_count:
+            raise RuntimeError(
+                "SELL_FILL_SYNC_COUNT_MISMATCH: "
+                f"target={target_count}, synced={synced_count}, failed={failed_count}"
+            )
+
+        conn.commit()
+        print("SELL_FILL_SYNC_VALIDATION=SUCCESS")
 
     except Exception as e:
         conn.rollback()

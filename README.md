@@ -2,18 +2,83 @@
 
 `port_strategy_execution`은 포트폴리오 전략의 실행 단계 Python MS다. daily decision/research 결과와 connector 계좌/잔고/포지션 정보를 읽어 `strategy_execution_order` 후보를 만들고, 승인된 실행 흐름에서는 connector 주문 요청, 체결 동기화, 전략 포지션 상태 갱신까지 이어질 수 있다.
 
-이 README는 현재 파일 구조와 소스를 읽기 전용으로 확인해 작성한 초기 문서 초안이다. 실제 execution/order 생성, 자동 매수/매도, 체결 조회, fill sync, position sync, intraday monitor, DB DDL/DML, 외부 API 호출, 크롤링, 주문 제출은 수행하지 않았다.
+이 README는 현재 파일 구조와 소스를 정적으로 확인해 유지하는 운영 문서다. 실제 execution/order 생성, 자동 매수/매도, 체결 조회, fill sync, position sync, intraday monitor, DB DDL/DML, 외부 API 호출, 크롤링, 주문 제출은 수행하지 않는다. AWS 운영 관점 설명은 PORT-STRATEGY-EXECUTION 책임 범위 안의 사실만 기록하고, 다른 MS 내부 구현/전체 orchestration 상세는 제외한다.
 
 ## 주요 역할
 
 - Daily BUY signal 기반 실행 주문 후보를 만든다.
 - Daily position SELL decision 기반 실행 주문 후보를 만든다.
 - Backtest trade log 기반 실행 주문 후보를 만들 수 있다.
+- `strategy_execution_plan`, `strategy_execution_order` 저장/상태 갱신 책임을 가진다.
 - READY 상태의 BUY/SELL execution order를 connector BUY/SELL 호출로 제출할 수 있다.
-- connector 주문/체결 결과를 읽어 `strategy_execution_order` 상태를 동기화할 수 있다.
+- `connector_order_request`, `connector_fill` 조회 기반으로 execution order 상태 동기화 책임을 가진다.
 - BUY fill을 기준으로 `strategy_position_state` OPEN 포지션을 생성할 수 있다.
-- 장중 포지션을 모니터링해 intraday stop SELL 후보를 만들 수 있다.
-- AWS Migration 전 초기 정리를 위해 전체 파일 카탈로그와 파일별 설명 주석을 유지한다.
+- SELL fill을 기준으로 `strategy_position_state.remaining_qty` 차감과 포지션 상태 갱신을 할 수 있다.
+- 장중 OPEN 포지션을 모니터링해 `strategy_intraday_position_check` 저장과 `INTRADAY_STOP_SELL` 후보를 만들 수 있다.
+- AWS Paper Daily Step 8~17 및 장중 10분 intraday evaluate 흐름에서 실행 계층으로 호출될 수 있다.
+
+## Execution 책임 경계
+
+Execution이 직접 책임지지 않는 영역은 아래와 같다. 관련 내용을 README 및 하위 문서에서 확장하지 않는다.
+
+- 외부 데이터 수집 (Crawler 책임)
+- raw 데이터 전처리와 feature 생성 (Preprocessor 책임)
+- daily BUY signal 판단 자체 (StrategyDecision 책임)
+- daily position HOLD/SELL/SKIP 판단 자체 (StrategyDecision 책임)
+- 백테스트와 리포트 생성 (StrategyResearch 책임)
+- KIS API 내부 구현과 connector token 관리 (MarketConnector 책임)
+- View 화면 렌더링과 승인 UI (port-view 책임)
+- Daily Batch 전체 orchestration (Scheduler + Step Functions 책임)
+
+## AWS 운영 구조 (Execution 관점)
+
+AWS Paper 환경에서 Execution은 execution order 생성, 주문 실행 연계, fill sync, position sync, intraday stop 후보 생성 단계로 호출된다. 아래는 Execution이 실제로 관여하는 구간만 정리한다. Step Functions state machine 전체 step, EventBridge Scheduler 라인업, Lambda 내부 구현, MarketConnector KIS API 상세, 다른 MS의 세부 운영 로그는 이 문서에 담지 않는다.
+
+전체 orchestration은 EventBridge Scheduler와 Step Functions가 담당한다. Execution은 orchestration 대상의 실행 계층으로만 호출된다. 실제 broker/KIS 주문 API 호출은 MarketConnector 책임이며 이 저장소에서 직접 수행하지 않는다. 다만 이 저장소의 auto buy/sell entrypoint는 connector BUY/SELL helper를 호출하는 경로를 포함할 수 있다.
+
+### Daily Step 8~17 Execution 역할
+
+- **Step 8 DAILY_BUY_EXECUTION** — `daily_buy_execution_run.py`가 latest daily run과 daily BUY signal을 읽어 BUY execution order 후보를 생성한다. `execution_daily_signal_builder.py`, `execution_buy_sizing.py`, `execution_repository.py`를 거쳐 `strategy_execution_plan`, `strategy_execution_order`에 저장/갱신 가능성이 있다. broker/KIS 주문 제출은 이 step 범위 밖.
+- **Step 9 DAILY_SELL_EXECUTION** — `daily_sell_execution_run.py`가 latest daily position decision run의 SELL decision을 읽어 SELL execution order 후보를 만든다. `execution_daily_position_sell_builder.py`가 decision row를 `strategy_execution_order` 저장용 dict로 변환하며, `strategy_daily_position_decision.execution_order_id` 연결이 발생할 수 있다.
+- **Step 10 DAILY_AUTO_SELL** — `daily_auto_sell_execute_run.py --execute`가 READY 상태 SELL execution order를 조회하고, connector SELL 호출과 `strategy_position_state` SELL_ORDERED 상태 갱신으로 이어질 수 있다. broker 주문 접수 자체는 MarketConnector connector helper 경유.
+- **Step 11 DAILY_AUTO_BUY** — `daily_auto_buy_execute_run.py --execute`가 READY 상태 BUY execution order를 조회하고, connector BUY 호출과 실행 결과 상태 갱신을 수행할 수 있다.
+- **Step 12~13 MARKETCONNECTOR/CONNECTOR order execute · check** — 이 구간은 MarketConnector 책임이다. Execution 관점에서는 승인된 REQUESTED 주문이 MarketConnector에서 broker/KIS로 제출되고, 체결 조회 후 `connector_order_request`, `connector_fill`이 갱신되어 Step 14~16 sync 대상 데이터가 준비되는 것으로만 이해한다.
+- **Step 14 SYNC_SELL_FILL** — `execution_sync_sell_fill.py`가 SELL 주문의 체결 결과를 요약해 `strategy_execution_order` 상태를 `FILLED`로 갱신하고 `strategy_position_state.remaining_qty` 차감/상태 전이를 반영할 수 있다.
+- **Step 15 SYNC_BUY_FILL** — `execution_sync_buy_fill.py`가 BUY 주문의 체결 수량/평균가를 요약해 `strategy_execution_order` 상태를 `FILLED`로 갱신할 수 있다.
+- **Step 16 SYNC_BUY_POSITION** — `execution_sync_buy_position.py`가 FILLED BUY execution order 중 아직 포지션이 없는 항목을 찾아 `strategy_position_state` OPEN row를 생성하거나 기존 OPEN에 추가 매수를 병합할 수 있다.
+- **Step 17 BALANCE_REFRESH** — MarketConnector 책임 구간이다. Execution은 이후 잔고/포지션 snapshot을 조회 대상으로 사용할 뿐이며, 자체적으로 balance/position snapshot 생성 책임을 가지지 않는다.
+
+### 장중 10분 Intraday Evaluate 흐름 (Execution 관점)
+
+- 장중 OPEN 포지션 monitor와 손절 후보 판정은 `daily_intraday_position_monitor_run.py`가 담당한다.
+- `execution_position_loader.py`가 OPEN `strategy_position_state`와 최신 connector position snapshot을 결합해 포지션 컨텍스트를 만든다.
+- `execution_sell_evaluator.py`가 포지션 컨텍스트, 종목 feature, 시장 feature를 결합해 SELL/HOLD 평가 payload를 만든다.
+- 정상/이상 여부와 관계없이 점검 결과는 `strategy_intraday_position_check`에 저장하는 정책이다 (2026-05-27 미커밋 변경으로 정합됨).
+- `--create-order` 명시 시 hard stop 조건 충족 종목에 대해 `INTRADAY_STOP_SELL` execution order를 생성할 수 있다. 실제 broker 주문 제출은 별도 approval gate 경유가 원칙이며 이 저장소 범위 밖이다.
+- `execution_sell_builder.py`는 OPEN 포지션 평가 결과로 `POSITION_SELL` execution order 후보를 생성할 수 있는 별도 경로이며, `strategy_position_state` 평가 결과와 `strategy_execution_order`를 갱신할 수 있다.
+
+### ECS RunTask / 컨테이너 실행 대상
+
+Paper Daily Step 8~11, 14~16과 장중 monitor는 ECS RunTask 또는 컨테이너 실행 대상으로 호출될 수 있다. 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id, log group 이름은 이 문서에 원문으로 기록하지 않고 아래와 같은 placeholder로만 취급한다.
+
+- `<EXECUTION_ECS_CLUSTER>`
+- `<EXECUTION_TASK_DEFINITION_ARN>`
+- `<EXECUTION_ECR_IMAGE_URI>`
+- `<EXECUTION_LOG_GROUP>`
+- `<COMMAND_ID>`
+
+컨테이너 실행 대상 entrypoint는 아래와 같다. broker/KIS 주문 API 호출은 어느 경로에서도 이 저장소에서 직접 수행하지 않는다.
+
+- `python daily_buy_execution_run.py`
+- `python daily_sell_execution_run.py`
+- `python daily_auto_buy_execute_run.py --execute`
+- `python daily_auto_sell_execute_run.py --execute`
+- `python execution_sync_buy_fill.py`
+- `python execution_sync_sell_fill.py`
+- `python execution_sync_buy_position.py`
+- `python daily_intraday_position_monitor_run.py`
+
+`Dockerfile`은 `python:3.13-slim` 기반이며 build context 상위에 `port_strategy_execution` 디렉터리가 포함되도록 구성한다. `requirements.txt`는 최소한의 런타임 의존성(`psycopg2-binary`)만 명시한다. `create_execution_docker_files.py`는 위 두 파일을 로컬에서 재생성하는 헬퍼 스크립트로, 운영 실행 대상이 아니다.
 
 ## 실행 주의사항
 
@@ -35,22 +100,29 @@
 
 위 파일들은 DB 쓰기, connector 주문 호출, 체결 조회 결과 반영, 포지션 상태 변경, intraday stop order 생성으로 이어질 수 있다. 문서화/리뷰 목적에서는 실행하지 않고 정적 분석만 수행한다.
 
+Paper 자동 BUY/SELL은 별도 승인 flow(운영자 승인 + Scheduler 상태 ENABLED)를 거친 이후에만 활성화된다. Live 환경 자동 BUY/SELL은 이 저장소 범위에서 다루지 않으며, 후보 + 수동 승인 우선 정책을 유지한다.
+
 ## 파일 구조
 
 ```text
 .
 ├── access_token.txt
+├── AGENTS.md
+├── CHANGELOG.md
+├── Dockerfile
+├── README.md
 ├── backtest_execution_run.py
+├── create_execution_docker_files.py
 ├── daily_auto_buy_execute_run.py
 ├── daily_auto_sell_execute_run.py
 ├── daily_buy_execution_run.py
 ├── daily_intraday_position_monitor_run.py
 ├── daily_sell_execution_run.py
+├── db_config.py
 ├── execution_build_candidates.py
 ├── execution_builder.py
 ├── execution_buy_sizing.py
 ├── execution_config.py
-├── db_config.py
 ├── execution_daily_position_sell_builder.py
 ├── execution_daily_signal_builder.py
 ├── execution_db.py
@@ -61,7 +133,16 @@
 ├── execution_sell_evaluator.py
 ├── execution_sync_buy_fill.py
 ├── execution_sync_buy_position.py
-└── execution_sync_sell_fill.py
+├── execution_sync_sell_fill.py
+├── requirements.txt
+└── docs/
+    ├── database.md
+    ├── source-file-catalog.md
+    └── worklog/
+        ├── 2026-05-26.md
+        ├── 2026-05-27.md
+        ├── 2026-05-28.md
+        └── 2026-07-01.md
 ```
 
 `access_token.txt`는 민감정보 후보 파일로 취급한다. 값은 읽거나 문서에 기록하지 않는다.

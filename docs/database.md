@@ -36,6 +36,16 @@ execution,decision,research,connector,preprocessor,interest,reference,legacy,pub
 
 schema-per-domain 전환 후에도 기존 SQL은 search_path 기반으로 동작한다. 예를 들어 `strategy_execution_order`, `strategy_execution_plan`, `strategy_position_state`는 `execution` schema에서, `connector_order_request`, `connector_fill`은 `connector` schema에서 해석되는 구조다.
 
+## Execution 관점 Schema 책임
+
+- `execution` — `strategy_execution_plan`, `strategy_execution_order`, `strategy_position_state`, `strategy_intraday_position_check` 저장 위치. 이 저장소가 직접 write 책임을 가진다.
+- `decision` — `strategy_daily_position_decision`, daily BUY signal 등 Execution 후보 생성 입력 위치. Execution은 조회와 `execution_order_id` 연결 update 정도만 수행한다.
+- `research` — backtest 결과(`strategy_backtest_run`, `strategy_backtest_daily`, `strategy_trade_log`) 조회 위치. `backtest_execution_run.py` 후보 생성 입력이다.
+- `connector` — `connector_order_request`, `connector_fill`, `connector_balance_snapshot`, `connector_position_snapshot`, `connector_account` 조회 위치. Execution은 fill sync와 position sync 입력으로만 사용한다.
+- `preprocessor` / `interest` / `reference` / `legacy` — feature 조회, 참조 데이터, 호환용 legacy 입력 위치. Execution 범위에서는 SELL evaluator, intraday monitor의 read 경로에 필요한 만큼만 접근한다.
+
+이 문서는 Execution 관점 schema 설명만 유지한다. 다른 MS(Preprocessor, Research, Decision, Connector, View)의 schema 내부 상세는 확장하지 않는다.
+
 ## 보안
 
-DB password, API token, 계좌번호, webhook URL 같은 민감정보는 환경변수로 관리한다. 문서에는 실제 값을 기록하지 않고 필요한 경우 `[REDACTED]`로 표기한다.
+DB password, API token, 계좌번호, webhook URL 같은 민감정보는 환경변수로 관리한다. 문서에는 실제 값을 기록하지 않고 필요한 경우 `[REDACTED]`로 표기한다. DB host, port, user, connection string 원문도 기록하지 않는다.
