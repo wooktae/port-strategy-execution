@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
@@ -23,3 +23,4 @@ venv/
 # Local test / scratch files
 test*.py
 debug_*.py
+access_token.txt
