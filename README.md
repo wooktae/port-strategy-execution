@@ -19,6 +19,9 @@
 | 실행 형태 | 루트 실행형 Python entrypoint 중심 |
 | 주문 API | MarketConnector helper 경유 |
 | 기본 정책 | 후보 생성과 승인 경계를 분리하고 중복 주문을 방지 |
+| CI · Artifact | GitHub Actions·CodeBuild·ECR 기반 Container CI, Build-only |
+| Image 기준 | Git SHA 기반 Docker Image |
+| 검증 방식 | Candidate Task Definition 검증 후 State Machine Revision 승격·Rollback |
 | 문서 기준 | 현재 코드·파일 구조의 정적 확인 결과 |
 
 ## 2. 주요 책임
@@ -204,28 +207,39 @@ Execution Order와 전략 Position에 반영할 수 있다.
 
 ### 5.6 Step 15 · BUY Fill Sync
 
-`execution_sync_buy_fill.py`는 BUY 주문의 체결 수량과 평균가를 집계해
-Execution Order 상태에 반영할 수 있다.
+`execution_sync_buy_fill.py`는 BUY 주문의 Connector Request 최종 상태와 체결을 읽어
+Execution Order를 Terminal 상태로 반영한다.
 
 | 항목 | 확인 내용 |
 |---|---|
-| Fill 집계 | 동일 체결 중복 반영 방지 |
-| 부분 체결 | 요청 수량과 누적 체결 수량 분리 |
-| 평균가 | 실제 fill 가중 평균 기준 확인 |
-| 상태 전이 | 부분 체결과 전량 체결 상태 구분 |
-| Connector 연결 | 올바른 request 기준으로 집계하는지 확인 |
+| FILLED | 체결 집계 후 `FILLED` Terminal 처리 |
+| CANCELED | 정상 취소 Request는 별도 `CANCELED` Terminal 처리 |
+| CANCELED + 체결 0건 | 실패가 아니라 정상 종료로 처리 |
+| CANCELED + 체결 존재 | 오류로 판정 |
+| 부분 체결 | CANCELED와 혼동하지 않고 요청·누적 수량 비교 |
+| 평균가 | 실제 fill 가중 평균 기준 |
+| Summary | filled·canceled·terminal·failed 건수 분리 |
+| 실패 집계 | 정상 CANCELED는 failed 건수에서 제외 |
+
+FILLED와 CANCELED는 별도 Terminal 결과로 구분한다.
+체결 없는 정상 취소 주문을 실패 건수로 집계하지 않는다.
 
 ### 5.7 Step 16 · BUY Position Sync
 
-`execution_sync_buy_position.py`는 체결된 BUY Order를 전략 Position에 반영할 수 있다.
+`execution_sync_buy_position.py`는 FILLED BUY Order만 전략 Position에 반영한다.
 
 | 상황 | 확인 기준 |
 |---|---|
+| FILLED BUY | Position 생성 또는 기존 OPEN 병합 대상 |
+| CANCELED BUY | Position 생성 대상이 아님 |
+| 실행 순서 | Step 15 FILLED Commit 이후 Step 16 실행 |
 | 신규 종목 | OPEN Position 신규 생성 |
 | 기존 OPEN Position | 추가 매수 병합 정책 확인 |
 | 재실행 | 동일 BUY fill의 중복 Position 생성 방지 |
-| 평균 단가 | 기존 수량과 신규 체결의 병합 방식 확인 |
-| Sync 완료 | Order payload 또는 상태 기록 기준 확인 |
+| 성공 판정 | 대상·생성·실패 건수로 확인 |
+
+대상 0건 성공과 실제 Position 생성 성공을 구분한다.
+Step 15 성공을 Step 16 Position 생성 성공으로 합치지 않는다.
 
 ### 5.8 Step 17 · Balance Refresh
 
@@ -237,6 +251,21 @@ Execution은 이후 아래 Snapshot을 조회 입력으로 사용할 수 있다.
 - `connector_position_snapshot`
 
 Execution 자체가 Broker Balance Snapshot 생성 책임을 소유한다고 표현하지 않는다.
+
+### 5.9 P0 Order Chain Validator
+
+`execution_validate_order_chain.py`는 Step 16 이후 실행 체인을 read-only로 검증한다.
+Plan → Order → Connector Request → Fill → Position 체인을 함께 확인한다.
+
+| 대상 | 검증 기준 |
+|---|---|
+| FILLED BUY | Connector Fill과 Position 추적이 있어야 정상 |
+| CANCELED BUY | 유효한 취소 체인이면 Fill·Position 없이 정상 Terminal |
+| Execution 상태 | 중간 상태만으로 종결 여부를 판정하지 않음 |
+| 종합 판정 | Connector Request 최종 상태·Fill 합계·Position을 함께 확인 |
+
+`SUBMITTED` 같은 중간 상태만으로 체인 성공을 단정하지 않는다.
+`--allow-no-target`는 대상 0건 정상 종료 옵션이며 실제 Target 오류를 숨기지 않는다.
 
 ## 6. 장중 Intraday Evaluate
 
@@ -387,6 +416,25 @@ Candidate
 
 Sizing 로직 변경은 실제 주문 금액에 직접 영향을 준다.
 
+### 9.1 다중 후보 누적 가용현금 배분
+
+`execution_buy_sizing.py`는 단일 종목의 주문 수량 계산만 담당한다.
+여러 BUY 후보의 누적 가용현금 배분은 `execution_daily_signal_builder.py`의
+후보 생성 흐름이 담당한다.
+
+| 항목 | 기준 |
+|---|---|
+| 처리 순서 | 확정된 후보 순서를 유지 |
+| 누적 현금 | 하나의 Daily Plan 안에서 잔여 가용현금 관리 |
+| READY 차감 | READY 주문의 예상 주문 금액만 다음 후보에서 차감 |
+| BLOCKED · 0주 | 가용현금을 차감하지 않음 |
+| 초과 방지 | 후속 BUY가 잔여 현금을 초과하면 축소 또는 차단 |
+| 시장가 여유 | 기존 안전 여유 정책 유지 |
+| 추적성 | 후보별 입력 가용현금과 예상 주문 금액을 Payload에 유지 |
+
+단일 종목 Sizing 함수와 Plan 단위 누적 배분 책임을 구분한다.
+후속 후보 계산에 최초 가용현금을 그대로 재사용하지 않는다.
+
 ## 10. SELL 수량 계약
 
 SELL 수량은 전략 Position과 Broker 보유 수량을 함께 고려할 수 있다.
@@ -477,11 +525,20 @@ Backtest 후보는 Daily 운영 Signal과 같은 입력으로 표현하지 않�
 
 ```text
 .
+├── .github/
+│   └── workflows/
+│       └── execution-codebuild.yml
+├── .devops/
+│   ├── codebuild/
+│   │   └── buildspec.yml
+│   └── scripts/
+│       └── container-smoke.py
+├── .dockerignore
+├── .gitignore
 ├── AGENTS.md
 ├── CHANGELOG.md
 ├── Dockerfile
 ├── README.md
-├── access_token.txt
 ├── backtest_execution_run.py
 ├── create_execution_docker_files.py
 ├── daily_auto_buy_execute_run.py
@@ -505,16 +562,25 @@ Backtest 후보는 Daily 운영 Signal과 같은 입력으로 표현하지 않�
 ├── execution_sync_buy_fill.py
 ├── execution_sync_buy_position.py
 ├── execution_sync_sell_fill.py
+├── execution_validate_order_chain.py
+├── execution_validate_ready_plan_order.py
+├── pytest.ini
 ├── requirements.txt
+├── requirements-dev.txt
+├── tests/
 └── docs/
     └── source-file-catalog.md
 ```
 
+`.devops`와 `.github`는 CI·Build 자산이며 `.dockerignore` 기준으로 Runtime Image에서 제외된다.
+`tests/`, `docs/`도 Runtime Image에는 포함하지 않는다.
+
 날짜별 `docs/worklog/*.md`는 현재 문서 구조에 포함하지 않는다.
 새 Worklog 파일을 만들지 않는다.
 
-`access_token.txt`는 민감정보 후보 파일로 취급한다.
-값을 읽거나 README·로그·완료 보고에 기록하지 않는다.
+`access_token.txt`는 Runtime 민감파일 후보다.
+Git 추적과 Docker Build Context·Image에서 제외되며, 값을 읽거나 문서·로그·완료 보고에 기록하지 않는다.
+Repository 파일 구조 Tree에는 추적 Source로 표시하지 않는다.
 
 ## 15. 파일 그룹
 
@@ -734,8 +800,23 @@ README에 원문으로 기록하지 않는다.
 <COMMAND_ID>
 ```
 
-Docker Base Image와 기본 CMD는 실제 `Dockerfile`을 확인한다.
-문서에 적힌 값이 오래되었을 가능성을 고려한다.
+현재 `Dockerfile` Base Image는 `python:3.13-slim`이며 기본 CMD는
+`python daily_auto_buy_execute_run.py`다.
+기본 CMD는 `--execute` 없이 동작하며, CI는 이 CMD 계약을 실행 없이 확인만 한다.
+
+### 21.1 CI와 Candidate·운영 참조
+
+| 항목 | 기준 |
+|---|---|
+| CI | GitHub Actions → OIDC → CodeBuild → ECR 경로, Build-only |
+| CI 범위 | Compile·Unit Test·Ruff·Docker Build·Container Smoke |
+| CI 제외 | ECS·Step Functions·주문 Entry Point 실행 안 함 |
+| Candidate | 운영 Task Definition을 복제한 Standalone ECS Task로 검증 |
+| 운영 참조 변경 | State Machine의 Execution Task Definition 참조는 수동 승인 기반 |
+| Rollback | 백업 Definition으로 이전 Task Definition 참조 복구 |
+| 구분 | 실제 Daily Workflow 실행과 Revision 승격을 별도로 취급 |
+
+CI Build 성공을 운영 배포 성공이나 주문 실행으로 해석하지 않는다.
 
 ## 22. 실행 안전
 
@@ -805,22 +886,31 @@ git diff --stat
 - Source Catalog는 파일별 책임과 변경 영향을 설명한다.
 - 날짜별 Worklog는 새로 만들지 않는다.
 
-## 25. 현재 확인이 필요한 항목
+## 25. 확정된 항목과 확인이 필요한 항목
 
-아래 항목은 실제 코드와 운영 정의를 정적으로 대조해 확정해야 한다.
+### 25.1 최근 확정된 항목
+
+| 항목 | 확정 내용 |
+|---|---|
+| Docker Image | Git SHA 기반 Image와 Candidate Task Definition 검증 방식 |
+| Docker CMD | 기본 CMD는 `python daily_auto_buy_execute_run.py` (실행 없이 확인) |
+| Step 15 CANCELED | 정상 취소를 실패가 아닌 별도 Terminal로 처리 |
+| BUY Position 생성 조건 | FILLED BUY만 대상, CANCELED BUY는 제외 |
+| 운영 State Machine 참조 | Execution 관련 5개 State가 새 Revision 참조 |
+| Rollback 방식 | 백업 Definition으로 이전 Revision 참조 복구 |
+
+### 25.2 아직 확인이 필요한 항목
 
 | 항목 | 확인 대상 |
 |---|---|
-| Step Command | 실제 ECS Command Override |
+| Step Command | 전체 Daily의 실제 ECS Command Override |
 | Plan Key | Daily·Position·Backtest별 재사용 기준 |
 | Order Key | 중복 방지 Unique Key와 Conflict Target |
-| Status | Plan·Order·Connector의 실제 상태 문자열 |
+| Status | Plan·Order·Connector의 전체 상태 문자열 |
 | Partial Fill | 부분 체결 상태와 재실행 처리 |
 | SELL Sync | Position 차감 Transaction 범위 |
-| BUY Sync | 추가 매수 병합 기준 |
-| Intraday | 점검 저장과 Order 생성 분기 |
+| Intraday | 점검 저장과 Order 생성 Transaction 경계 |
 | Execution Mode | 각 모드의 실제 허용 조건 |
-| Docker | Base Image와 기본 CMD |
 | External Import | MarketConnector·Holiday Helper 실제 경로 |
 
 확인되지 않은 내용은 운영 사실로 단정하지 않는다.

@@ -158,9 +158,12 @@ Connector Account · Balance · Position
 | 출력 | DB Row, ID, Summary, Update 결과 |
 | Write 대상 | Plan, Order, Position, Decision 연결, Intraday Check |
 | Read 대상 | Connector Request·Fill·Balance·Position Snapshot |
+| 후보 조회 | Daily BUY 후보 조회 순서 제공 |
+| 현금 배분 | Plan 단위 누적 현금 배분에 필요한 Position·Price·Open Order 조회 |
+| Terminal 조회 | CANCELED Order와 Terminal Chain 관련 Read 책임 |
 | 주요 계약 | Unique Key, Upsert, Status, Connector Request 연결 |
 | 변경 위험 | 중복 주문, 부분 반영, Position 불일치 |
-| 확인 대상 | SQL 조건, Join Cardinality, Commit·Rollback 범위 |
+| 확인 대상 | 실제 수정된 함수와 SQL, Join Cardinality, Commit·Rollback 범위 |
 | 실행 | 모든 호출을 DB 영향 가능 경로로 취급 |
 
 ## 5. Container와 Dependency
@@ -169,14 +172,29 @@ Connector Account · Balance · Position
 
 | 항목 | 값 |
 |---|---|
-| 책임 | Execution Container Image 정의 |
-| 입력 | Build Context, Requirements, Source |
+| 책임 | Git SHA 기반 Execution Container Image 정의 |
+| 입력 | Build Context, Requirements, Runtime Source |
 | 출력 | ECS 또는 Local Container Image |
-| 운영 위치 | Paper Daily Execution Task 후보 |
-| 외부 영향 | Image Build와 Runtime Command |
+| Runtime 범위 | Root Runtime Source와 `requirements.txt` |
+| 제외 | `.dockerignore` 기준으로 `.devops` Build Script와 Token·Secret 미포함 |
+| 기본 CMD | `python daily_auto_buy_execute_run.py` (`--execute` 없음) |
 | 변경 위험 | 잘못된 Source Copy, Dependency 누락, CMD 변경 |
 | 확인 대상 | Base Image, Workdir, Copy 경로, 기본 CMD |
 | 민감정보 | Image URI·Digest·Registry 값 기록 금지 |
+
+### CI와 DevOps 자산
+
+| 파일 | 책임 |
+|---|---|
+| `.github/workflows/execution-codebuild.yml` | OIDC로 CodeBuild 시작·대기, Build·ECR Push, 주문 미실행 |
+| `.devops/codebuild/buildspec.yml` | Compile·Test·Ruff·Docker Build·Smoke, Build-only, 선택적 ECR Push |
+| `.devops/scripts/container-smoke.py` | Runtime 파일·Import 계약과 금지 경로 검증 |
+| `.dockerignore` | Token·`.devops`·`tests`·`docs`를 Image에서 제외 |
+| `.gitignore` | `access_token.txt`와 로컬 산출물 Git 제외 |
+| `pytest.ini` | `tests` 대상 테스트 설정 |
+| `tests/` | 취소·현금 배분·체인·Container 계약 테스트 |
+
+CI는 Build·Test·ECR·Token 제외 책임만 가지며 ECS·Step Functions·주문을 실행하지 않는다.
 
 ### `requirements.txt`
 
@@ -224,11 +242,13 @@ Connector Account · Balance · Position
 |---|---|
 | 책임 | Daily BUY Signal을 Order Payload로 변환 |
 | 입력 | Signal, Current Holding, Price, Sizing 결과 |
-| 출력 | `strategy_execution_order` 저장용 구조 |
-| DB 영향 | 직접 또는 호출 구조에 따라 없음 |
+| 출력 | Order 구조와 Validation Result·Order Snapshot |
+| 누적 현금 | 후보별 Sizing 입력과 예상 주문 금액을 순차 배분 |
+| 결과 전달 | READY·BLOCKED 결과와 잔여 현금 흐름 관리 |
+| DB 영향 | 직접 없음, Repository 조회 Helper 사용 |
 | 주요 계약 | Source ID, Ticker, Side, Quantity, Reason |
-| 변경 위험 | Signal 추적성 손실, 수량·가격 의미 변화 |
-| 확인 대상 | 필수 Field, Validation, Skip Reason |
+| 변경 위험 | Signal 추적성 손실, 수량·가격·현금 배분 의미 변화 |
+| 확인 대상 | 필수 Field, Validation, Skip Reason, 후보 순서 |
 | 주의 | Builder 결과가 실제 주문 성공을 의미하지 않음 |
 
 ### `execution_buy_sizing.py`
@@ -240,6 +260,8 @@ Connector Account · Balance · Position
 | 출력 | Quantity, Amount와 Skip Reason 후보 |
 | DB 영향 | 직접 없음 |
 | 주요 계약 | 최대 비율, 최소 주문 금액, 정수 수량 |
+| 책임 경계 | 단일 BUY 후보 수량 계산만 담당 |
+| 다중 후보 | 여러 후보 잔여 현금 배분은 Builder·Repository 흐름에서 확인 |
 | 변경 위험 | 실제 주문 금액과 종목 집중도 변화 |
 | 확인 대상 | 절사·반올림, 0 Price, Cash 부족, 기존 보유 |
 | 테스트 관점 | Boundary와 Decimal 계산을 우선 확인 |
@@ -344,29 +366,51 @@ SELL Fill이 한 건 있다는 이유만으로 Order 전체를 `FILLED`로 단�
 
 | 항목 | 값 |
 |---|---|
-| 책임 | BUY Connector Fill을 Execution Order에 반영 |
+| 책임 | BUY Connector Fill과 취소 상태를 Execution Order Terminal로 반영 |
 | AWS 위치 | Paper Daily Step 15 후보 |
 | 입력 | BUY Order, Connector Request, Fill |
-| 출력 | 누적 체결 수량·평균가·Order 상태 |
+| 출력 | FILLED·CANCELED Terminal 상태와 Summary |
 | Write 대상 | `strategy_execution_order` |
-| 주요 계약 | Fill 중복 방지와 가중 평균가 |
-| 주요 위험 | 부분 체결 조기 완료, 잘못된 Request 집계 |
-| 확인 대상 | Fill Scope, Quantity, Average Price, Retry |
+| Terminal 분류 | FILLED와 CANCELED를 별도 Terminal로 처리 |
+| 취소 처리 | 정상 CANCELED + 체결 0건은 정상 종료 |
+| 실패 집계 | 정상 CANCELED는 실패 건수에서 제외 |
+| Summary | filled·canceled·terminal·failed 분리 |
+| 주요 위험 | 취소 상태 오판정, 부분 체결 조기 완료, Transaction Rollback 범위 |
+| 확인 대상 | Request 최종 상태, Fill Scope, Quantity, Average Price |
 | 실행 | DB Write 가능하므로 실행 금지 |
 
 ### `execution_sync_buy_position.py`
 
 | 항목 | 값 |
 |---|---|
-| 책임 | BUY Fill을 전략 Position에 반영 |
+| 책임 | FILLED BUY Fill을 전략 Position에 반영 |
 | AWS 위치 | Paper Daily Step 16 후보 |
-| 입력 | 체결된 BUY Order와 기존 OPEN Position |
+| 입력 | FILLED BUY Order와 기존 OPEN Position |
+| 대상 | FILLED BUY만 대상, CANCELED는 제외 |
 | 출력 | 신규 Position 또는 추가 매수 병합 |
 | Write 대상 | `strategy_position_state`, Order Sync 기록 |
+| 추적 | `source_buy_execution_order_id`, Connector Request·Fill 추적 |
+| 성공 판정 | 대상 0건 성공과 실제 생성 성공을 분리 |
 | 주요 계약 | 동일 Fill 재처리 방지와 평균 단가 계산 |
 | 주요 위험 | 중복 Position, 수량 이중 반영 |
-| 확인 대상 | Existing OPEN 선택, Merge 공식, Sync Marker |
+| 확인 대상 | Existing OPEN 선택, Merge 공식, 재실행 중복 방지 |
 | 실행 | Position 생성·변경 가능하므로 실행 금지 |
+
+### `execution_validate_order_chain.py`
+
+| 항목 | 값 |
+|---|---|
+| 책임 | Execution Order → Connector Request → Fill → Position 체인 Validator |
+| AWS 위치 | Paper Daily Step 16 이후 P0 검증 후보 |
+| 입력 | Plan·Order·Connector Request·Fill·Position |
+| 출력 | 대상 수·오류 수와 non-zero exit |
+| 유형 | Read-only, DB Insert·Update·Delete 없음 |
+| FILLED BUY | Connector Fill과 Position 추적 필수 |
+| CANCELED BUY | 유효한 취소 체인이면 Fill·Position 없이 정상 Terminal |
+| CLI 옵션 | `--run-date`, `--plan-id`, `--allow-no-target` |
+| 주요 위험 | 상태 오판정과 False Positive |
+| 확인 대상 | Request 최종 상태, Fill 합계, Position 추적 |
+| 실행 | Read-only이나 DB 연결이므로 승인 없이 실행하지 않음 |
 
 ## 11. Position Context와 SELL 평가
 
@@ -666,6 +710,10 @@ Container Command Override 대상으로 사용될 수 있다.
 <COMMAND_ID>
 ```
 
+State Machine Definition은 이 Repository의 Source 파일이 아니다.
+Catalog는 이를 파일 항목으로 만들지 않고, DevOps 외부 영향과 운영 참조로만 설명한다.
+Execution 관련 State의 Task Definition 참조 변경과 Rollback Definition은 외부 운영 승인으로 관리한다.
+
 ## 22. 민감정보 후보
 
 ### `access_token.txt`
@@ -733,7 +781,9 @@ Container Command Override 대상으로 사용될 수 있다.
 | 변경 대상 | 함께 확인할 파일 |
 |---|---|
 | BUY Signal 입력 | Daily BUY Entrypoint, Signal Builder, Repository |
-| BUY Sizing | Signal Builder, Config, README |
+| BUY Sizing | Signal Builder, Repository, Config, Tests, README |
+| BUY Fill CANCELED 처리 | BUY Fill Sync, Order Chain Validator, BUY Position Sync |
+| Order Chain Validator | Repository, Connector Request·Fill, Position State |
 | SELL Decision 입력 | Daily SELL Entrypoint, SELL Builder, Repository |
 | Auto Execute | Auto BUY·SELL, Execute Order, Connector 계약 |
 | Order Status | Repository, Auto Execute, Fill Sync |
@@ -744,7 +794,8 @@ Container Command Override 대상으로 사용될 수 있다.
 | Intraday | Loader, Evaluator, Builder, Monitor |
 | Backtest 후보 | Backtest Entrypoint, Builder, Research 계약 |
 | DB Config | DB Helper, Repository, Container 설정 |
-| Docker | Docker Helper, Requirements, ECS Command |
+| Docker·CI | Workflow, Buildspec, Dockerfile, Ignore 파일, Tests |
+| State Machine Revision 변경 | Execution Task Definition 참조와 Rollback Definition |
 | 파일 추가·삭제 | README 구조와 Source Catalog |
 | 주요 계약 변경 | AGENTS, README, CHANGELOG |
 

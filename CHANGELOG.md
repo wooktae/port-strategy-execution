@@ -5,6 +5,104 @@
 현재 구조와 사용 방법은 `README.md`, 작업 규칙은 `AGENTS.md`,
 파일별 책임과 영향은 `docs/source-file-catalog.md`를 기준으로 확인한다.
 
+## 2026-08-03
+
+### Execution 오류 개선
+
+| 항목 | 변경 내용 |
+|---|---|
+| CANCELED BUY | 정상 취소를 별도 Terminal 상태로 처리 |
+| Step 15 집계 | 취소 주문을 실패 집계에서 제외 |
+| Step 15 Summary | filled·canceled·terminal·failed 분리 |
+| P0 Validator | 정상 취소 체인을 오류로 판정하지 않음 |
+| FILLED BUY | Position 추적 필수 기준 유지 |
+
+### BUY 금액 계산 개선
+
+| 항목 | 변경 내용 |
+|---|---|
+| 누적 배분 | 여러 BUY 후보를 Plan 내 누적 가용현금 기준으로 계산 |
+| 처리 순서 | 확정된 후보 순서 유지 |
+| READY 차감 | READY 주문 예상 금액만 잔여 현금에서 차감 |
+| BLOCKED | 현금을 차감하지 않음 |
+| 초과 방지 | 후속 BUY의 잔여 현금 초과를 축소 또는 차단 |
+| 책임 분리 | 단일 종목 Sizing과 Plan 단위 배분 책임 구분 |
+
+### 테스트와 Source 검증
+
+| 항목 | 결과 |
+|---|---|
+| 단위 테스트 | 20건 성공 |
+| Ruff | 성공 |
+| Python Compile | 성공 |
+| Runtime Token | Git·Docker Image 제외 확인 |
+| Source SHA | 변경 Source와 Remote SHA 일치 |
+| Working Tree | Clean |
+
+### CI와 Artifact
+
+| 항목 | 결과 |
+|---|---|
+| Repository | Execution GitHub Repository와 main Branch 구성 |
+| 인증 | GitHub Actions와 OIDC Role 구성 |
+| CodeBuild | 연계 시작·대기 성공 |
+| Image | Git SHA 기반 Docker Image 생성 |
+| ECR | Tag와 Digest 확인 |
+| 실행 경계 | Build-only에서 ECS·DB·주문 미실행 |
+
+### Candidate 검증
+
+| 항목 | 결과 |
+|---|---|
+| Task Definition | Candidate Revision 등록 |
+| Compile-only | 성공 |
+| Source·Image | 핵심 Source SHA-256 일치 |
+| Runtime Import | 성공 |
+| Auto BUY Dry-run | 성공, READY 대상 0건 |
+| 중복 주문 | 활성 중복 0건 |
+| Connector 체인 | 체결 BUY 1건·취소 BUY 1건 정상 Terminal |
+| Candidate Step 15 | 성공 |
+| Candidate Step 16 | Position 생성 성공 |
+| Candidate P0 Validator | 대상 2건·오류 0건 성공 |
+| 주문 영향 | 신규 Connector Request와 주문 제출 없음 |
+
+### 운영 승격과 복구
+
+| 항목 | 결과 |
+|---|---|
+| 승격 | Execution 관련 State 참조 5개를 새 Revision으로 승격 |
+| 백업 | 원본 State Machine Definition 백업 |
+| Rollback | 이전 Revision으로 복원 성공 |
+| 재승격 | 새 Revision 재승격 성공 |
+| 최종 상태 | State Machine ACTIVE, Execution은 새 Revision 참조 |
+| 실행 영향 | 승격·Rollback 과정 Workflow·ECS·DB·주문 미실행 |
+
+### 변경 파일
+
+| 항목 | 값 |
+|---|---|
+| Python | `execution_sync_buy_fill.py`, `execution_sync_buy_position.py` |
+| Python | `execution_validate_order_chain.py`, `execution_daily_signal_builder.py` |
+| Python | `execution_buy_sizing.py`, `execution_repository.py` |
+| 테스트 | `tests/`의 취소·현금 배분·체인 검증 테스트 |
+| CI | `.github/workflows/execution-codebuild.yml`, `.devops/codebuild/buildspec.yml` |
+| CI | `.devops/scripts/container-smoke.py` |
+| Container | `Dockerfile`, `.dockerignore`, `.gitignore`, `pytest.ini`, `requirements-dev.txt` |
+| 문서 | `README.md`, `AGENTS.md`, `CHANGELOG.md`, `docs/source-file-catalog.md` |
+
+실제 반영 파일은 Git Diff 기준이며, 추정 파일명은 기록하지 않는다.
+
+### 작업 경계
+
+| 항목 | 결과 |
+|---|---|
+| 신규 운영 주문 | 제출하지 않음 |
+| Candidate 검증 | 기존 주문 데이터 기준 Step 15·Step 16·Validator 수행 |
+| Position row | Candidate Step 16 검증 과정에서 1건 생성 |
+| State Machine | 승격·Rollback·재승격으로 참조 변경 |
+| DB DDL | 수행하지 않음 |
+| Secret·Token 원문 | 조회·기록하지 않음 |
+
 ## 2026-07-23
 
 ### Execution 문서 기준 재정비

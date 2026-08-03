@@ -265,6 +265,18 @@ Plan status 문자열과 unique key는 코드에서 확인한 값만 사용한�
 - 동일 source row가 중복 order를 만들지 않도록 unique key와 upsert 기준을 유지한다.
 - connector request가 이미 연결된 order를 재제출하는 경로를 임의로 만들지 않는다.
 
+### 12.1 Order Chain Validator 계약
+
+`execution_validate_order_chain.py`는 read-only 검증이며 아래를 지킨다.
+
+- Execution Order 상태만 단독으로 판정하지 않는다.
+- Connector Request 최종 상태를 확인한다.
+- Fill 누적 수량을 확인한다.
+- FILLED BUY의 Position 추적을 확인한다.
+- 정상 CANCELED 체인은 Fill·Position 미존재를 허용한다.
+- `--allow-no-target`가 실제 Target 오류를 숨기는 옵션이 아님을 유지한다.
+- Validator 성공은 대상 수와 오류 수를 함께 확인한다.
+
 ## 13. 주문 제출 안전 계약
 
 Auto BUY·SELL과 단일 Order 실행 경로를 수정할 때 아래를 반드시 확인한다.
@@ -304,6 +316,17 @@ Auto BUY·SELL과 단일 Order 실행 경로를 수정할 때 아래를 반드�
 
 Sizing 계산은 단위, 반올림과 가격 시점을 추정하지 않는다.
 
+다중 후보 누적 가용현금 배분 시 아래를 지킨다.
+
+- 여러 BUY 후보는 하나의 Plan 내 누적 가용현금 기준으로 계산한다.
+- 후보 처리 순서를 명시적으로 유지한다.
+- READY 주문만 잔여 현금을 차감한다.
+- BLOCKED·SKIPPED·0주 후보는 현금을 차감하지 않는다.
+- 후속 후보 계산에 최초 가용현금을 재사용하지 않는다.
+- 시장가 여유분과 예상 주문 금액의 단위를 확인한다.
+- 단일 종목 Sizing 함수와 Plan 단위 누적 배분 책임을 구분한다.
+- 테스트에서 후보 순서, READY·BLOCKED 혼합과 현금 경계값을 검증한다.
+
 ## 15. SELL 수량 계약
 
 SELL order 생성과 제출 시 아래를 확인한다.
@@ -340,6 +363,15 @@ BUY·SELL fill sync 변경 시 아래를 확인한다.
 - 취소·거부·정정 상태가 있다면 실제 connector 계약을 확인한다.
 - fill sync와 position sync의 transaction 경계를 임의로 합치거나 분리하지 않는다.
 
+CANCELED 취소 주문 처리 시 아래를 지킨다.
+
+- CANCELED는 실패와 동일한 상태가 아니다.
+- 유효한 취소 요청과 원 주문 최종 상태를 함께 확인한다.
+- 체결 0건의 정상 취소와 데이터 연결 누락을 구분한다.
+- CANCELED 주문은 실패 집계에서 제외할 수 있으나, 근거 없는 상태를 성공으로 처리하지 않는다.
+- Summary에서 FILLED·CANCELED·Terminal·Failed를 분리한다.
+- 일부 Order 성공 후 하나의 취소 주문 때문에 전체 Transaction을 Rollback하지 않도록 Transaction 경계를 확인한다.
+
 ## 17. Position State 계약
 
 `strategy_position_state` 변경 시 아래를 유지한다.
@@ -353,6 +385,14 @@ BUY·SELL fill sync 변경 시 아래를 확인한다.
 - 음수 remaining quantity를 허용하지 않는다.
 - execution order와 source decision 연결을 보존한다.
 - 중복 sync가 quantity를 반복 증가·차감하지 않도록 한다.
+
+BUY 체결과 취소 반영 시 아래를 지킨다.
+
+- CANCELED BUY에는 Position을 생성하지 않는다.
+- FILLED BUY는 Position Trace가 없으면 Validator 실패로 본다.
+- Step 15의 FILLED Commit과 Step 16 대상 조회 순서를 확인한다.
+- `target_count=0` 성공을 Position 생성 성공으로 표현하지 않는다.
+- Position Sync 검증 시 대상·생성·실패 건수와 Source Order·Request·Fill 연결을 확인한다.
 
 ## 18. Intraday Monitor 계약
 
@@ -448,6 +488,13 @@ DB 변경 시 아래를 확인한다.
 - 사용자가 이미 설정한 환경변수 또는 local secret loader를 사용한다.
 - password 값을 사용자에게 다시 입력하라고 요구하지 않는다.
 
+Runtime Token 파일은 아래를 지킨다.
+
+- Runtime Token 파일은 Git과 Docker Image에서 제외한다.
+- Token 파일 존재 여부만 확인하고 값은 읽지 않는다.
+- Build Context와 Image Layer 포함 여부를 검증한다.
+- 문서와 로그에 실제 값이나 부분 문자열을 기록하지 않는다.
+
 ## 24. 소스 수정 규칙
 
 - 원본 Python 파일을 무차별 문자열 치환하지 않는다.
@@ -484,6 +531,25 @@ DB 변경 시 아래를 확인한다.
 - 실제 AWS·SSM·ECS·Step Functions 실행
 
 실행하지 못한 검증을 통과했다고 기록하지 않는다.
+
+### 25.1 Progressive Release 순서
+
+Container 배포 검증은 아래 순서를 기본으로 한다.
+
+| 단계 | 내용 |
+|---|---|
+| 1 | Source·Unit Test |
+| 2 | Build-only |
+| 3 | Git SHA Image와 Digest 확인 |
+| 4 | Candidate Compile-only |
+| 5 | Runtime Source·Import Contract |
+| 6 | 주문 미호출 Dry-run |
+| 7 | 기존 데이터 기반 제한된 Sync·Validator |
+| 8 | 운영 State Machine 승격 |
+| 9 | 이전 Revision Rollback |
+| 10 | 검증된 Revision 재승격 |
+
+앞 단계 성공을 뒤 단계 성공으로 간주하지 않는다.
 
 ## 26. 문서 체계
 
@@ -563,7 +629,33 @@ DB 변경 시 아래를 확인한다.
 - 명시 요청 없이 `reset`, `restore`, `checkout`하지 않는다.
 - repository가 제공되지 않은 첨부 파일 작업에서는 Git 검증을 수행한 것처럼 기록하지 않는다.
 
-## 30. 완료 전 정합성 점검
+## 30. DevOps CI와 State Machine 작업 규칙
+
+Execution DevOps 작업은 아래를 지킨다.
+
+- CI는 GitHub Actions → OIDC → CodeBuild → ECR Build-only 경로다.
+- Build 성공을 운영 배포 성공이나 주문 실행으로 간주하지 않는다.
+- Candidate는 운영 Task Definition을 복제한 Standalone Task로 검증한다.
+- Candidate Revision을 운영 Service에 직접 승격하지 않는다.
+
+State Machine 참조 작업 시 아래를 지킨다.
+
+- 승격 전 Live Definition과 Revision ID를 백업한다.
+- 대상 Task Definition 참조 수와 State 이름을 확인한다.
+- 실행 중 Workflow 0건을 확인한다.
+- 변경 전후 참조 개수를 확인한다.
+- Rollback Definition을 별도로 보존한다.
+- 승격·Rollback 과정에서 Workflow를 자동 실행하지 않는다.
+- Revision 변경과 Daily 실행을 별도 승인으로 취급한다.
+
+Kiro 문서 작업에서는 아래를 지킨다.
+
+- 이번에 수행된 AWS·DB·ECS 검증을 다시 실행하지 않는다.
+- 제공된 검증 결과를 문서화 근거로만 사용한다.
+- 정적 파일 확인만 수행한다.
+- 문서 갱신 중 State Machine·ECS·DB·주문을 실행하지 않는다.
+
+## 31. 완료 전 정합성 점검
 
 문서 또는 코드 수정 후 관련 범위에서 아래를 확인한다.
 
@@ -592,7 +684,7 @@ DB 변경 시 아래를 확인한다.
 - UTF-8 No BOM
 - 탭과 후행 공백
 
-## 31. 완료 보고
+## 32. 완료 보고
 
 완료 보고는 2컬럼 표 중심으로 짧게 작성한다.
 
