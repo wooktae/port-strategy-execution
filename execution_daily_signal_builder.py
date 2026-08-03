@@ -113,7 +113,17 @@ def build_daily_signal_validation(
     return reasons
 
 
-def build_daily_signal_buy_execution_order(conn, plan_id, account, balance, daily_run, signal):
+def build_daily_signal_buy_execution_order(
+    conn,
+    plan_id,
+    account,
+    balance,
+    daily_run,
+    signal,
+    available_cash_override=None,
+    allocation_sequence=None,
+    initial_available_cash=None,
+):
     """
     strategy_daily_signal row를 BUY execution candidate로 변환.
 
@@ -145,11 +155,27 @@ def build_daily_signal_buy_execution_order(conn, plan_id, account, balance, dail
     tape_score = to_decimal(signal.get("tape_score"), "0")
     short_pressure_score = to_decimal(signal.get("short_score"), "0")
 
-    available_cash = (
+    balance_available_cash = (
         get_balance_value(balance, "orderable_cash", "0")
         or get_balance_value(balance, "cash_balance", "0")
         or Decimal("0")
     )
+
+    if available_cash_override is None:
+        available_cash = balance_available_cash
+    else:
+        available_cash = max(
+            to_decimal(available_cash_override, "0"),
+            Decimal("0"),
+        )
+
+    if initial_available_cash is None:
+        allocation_initial_cash = balance_available_cash
+    else:
+        allocation_initial_cash = max(
+            to_decimal(initial_available_cash, "0"),
+            Decimal("0"),
+        )
 
     total_eval_amount = (
         get_balance_value(balance, "total_eval_amount", "0")
@@ -226,8 +252,30 @@ def build_daily_signal_buy_execution_order(conn, plan_id, account, balance, dail
     # -------------------------------------------------
     # 4. validation_result 저장
     # -------------------------------------------------
+    reserved_amount = (
+        min(estimated_order_amount, available_cash)
+        if execution_status == "READY"
+        else Decimal("0")
+    )
+    available_cash_after_order = max(
+        available_cash - reserved_amount,
+        Decimal("0"),
+    )
+
     validation_result = {
         "validation_reasons": validation_reasons,
+
+        "cash_allocation": {
+            "allocation_policy": "SEQUENTIAL_READY_ORDER_RESERVATION_V1",
+            "allocation_sequence": allocation_sequence,
+            "initial_available_cash": str(allocation_initial_cash),
+            "available_cash_before_order": str(available_cash),
+            "reserved_amount": str(reserved_amount),
+            "available_cash_after_order": str(
+                available_cash_after_order
+            ),
+            "reserve_basis": "estimated_order_amount",
+        },
 
         # 신규 구조: View / 운영 화면에서 구조적으로 표시하기 좋게 분리
         "sizing": {
@@ -341,6 +389,10 @@ def build_daily_signal_buy_execution_order(conn, plan_id, account, balance, dail
         "order_price": order_price,
         "order_method": "MARKET",
 
+        # 여러 BUY 후보의 순차 현금 예약 계산용 내부 값.
+        # Repository 저장 컬럼은 아니며 호출자가 다음 후보 잔액을 계산한다.
+        "estimated_order_amount": estimated_order_amount,
+
         "execution_status": execution_status,
         "block_reason": block_reason,
 
@@ -349,19 +401,67 @@ def build_daily_signal_buy_execution_order(conn, plan_id, account, balance, dail
     }
 
 
-def build_daily_signal_execution_orders(conn, plan_id, account, balance, daily_run, signals):
+def build_daily_signal_execution_orders(
+    conn,
+    plan_id,
+    account,
+    balance,
+    daily_run,
+    signals,
+):
+    """
+    Daily BUY 후보를 입력 순서대로 생성하며 READY 주문 금액을 순차 예약한다.
+
+    정책:
+    - 최초 orderable_cash를 전체 후보의 공통 예산으로 사용
+    - READY 주문의 estimated_order_amount만 다음 후보 예산에서 차감
+    - BLOCKED 주문은 현금을 예약하지 않음
+    - 잔여 현금은 0 미만으로 내려가지 않음
+    """
+
     order_data_list = []
 
-    for signal in signals:
-        order_data_list.append(
-            build_daily_signal_buy_execution_order(
-                conn=conn,
-                plan_id=plan_id,
-                account=account,
-                balance=balance,
-                daily_run=daily_run,
-                signal=signal,
-            )
+    initial_available_cash = (
+        get_balance_value(balance, "orderable_cash", "0")
+        or get_balance_value(balance, "cash_balance", "0")
+        or Decimal("0")
+    )
+    remaining_cash = max(
+        initial_available_cash,
+        Decimal("0"),
+    )
+
+    for allocation_sequence, signal in enumerate(
+        signals,
+        start=1,
+    ):
+        order_data = build_daily_signal_buy_execution_order(
+            conn=conn,
+            plan_id=plan_id,
+            account=account,
+            balance=balance,
+            daily_run=daily_run,
+            signal=signal,
+            available_cash_override=remaining_cash,
+            allocation_sequence=allocation_sequence,
+            initial_available_cash=initial_available_cash,
         )
+
+        if order_data.get("execution_status") == "READY":
+            reserved_amount = min(
+                to_decimal(
+                    order_data.get(
+                        "estimated_order_amount"
+                    ),
+                    "0",
+                ),
+                remaining_cash,
+            )
+            remaining_cash = max(
+                remaining_cash - reserved_amount,
+                Decimal("0"),
+            )
+
+        order_data_list.append(order_data)
 
     return order_data_list

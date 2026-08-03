@@ -20,7 +20,7 @@ venv/
 *.tmp
 *.html
 
-# Local test / scratch files
-test*.py
-debug_*.py
+# Local root test / scratch files
+/test*.py
+/debug_*.py
 access_token.txt

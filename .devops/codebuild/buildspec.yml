@@ -1,0 +1,206 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    AWS_DEFAULT_REGION: ap-northeast-2
+    IMAGE_REPO_NAME: portfolio-strategy-execution
+    PUSH_IMAGE: "false"
+    RELEASE_STAGE: BUILD_ONLY
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.13
+    commands:
+      - set -euo pipefail
+      - echo "=== INSTALL DEPENDENCIES ==="
+      - python --version
+      - python -m pip install --upgrade pip
+      - python -m pip install -r requirements-dev.txt
+
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - echo "=== VERIFY BUILD-ONLY RELEASE CONTRACT ==="
+      - |
+        if [[ "${RELEASE_STAGE}" != "BUILD_ONLY" ]]; then
+          echo "UNSUPPORTED_RELEASE_STAGE=${RELEASE_STAGE}"
+          exit 10
+        fi
+
+        echo "RELEASE_STAGE=${RELEASE_STAGE}"
+        echo "ORDER_EXECUTION=DISABLED"
+        echo "PROGRESSIVE_RELEASE_EXECUTED=NO"
+
+      - echo "=== VERIFY SOURCE IDENTITY ==="
+      - |
+        SOURCE_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:-}"
+
+        if [[ -z "${SOURCE_SHA}" ]]; then
+          echo "SOURCE_SHA=EMPTY"
+          exit 20
+        fi
+
+        IMAGE_TAG="${SOURCE_SHA:0:12}"
+
+        AWS_ACCOUNT_ID="$(
+          aws sts get-caller-identity             --query Account             --output text
+        )"
+
+        ECR_REGISTRY="${
+          AWS_ACCOUNT_ID
+        }.dkr.ecr.${
+          AWS_DEFAULT_REGION
+        }.amazonaws.com"
+
+        IMAGE_URI="${
+          ECR_REGISTRY
+        }/${
+          IMAGE_REPO_NAME
+        }:${
+          IMAGE_TAG
+        }"
+
+        export SOURCE_SHA
+        export IMAGE_TAG
+        export AWS_ACCOUNT_ID
+        export ECR_REGISTRY
+        export IMAGE_URI
+
+        mkdir -p evidence
+
+        {
+          echo "SOURCE_SHA=${SOURCE_SHA}"
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "IMAGE_URI=${IMAGE_URI}"
+          echo "PUSH_IMAGE=${PUSH_IMAGE}"
+          echo "RELEASE_STAGE=${RELEASE_STAGE}"
+          echo "ORDER_EXECUTION=DISABLED"
+          echo "PROGRESSIVE_RELEASE_EXECUTED=NO"
+        } > evidence/build.env
+
+        echo "SOURCE_SHA=${SOURCE_SHA}"
+        echo "IMAGE_TAG=${IMAGE_TAG}"
+        echo "IMAGE_URI=${IMAGE_URI}"
+        echo "PUSH_IMAGE=${PUSH_IMAGE}"
+
+  build:
+    commands:
+      - set -euo pipefail
+
+      - echo "=== PYTHON COMPILE ==="
+      - python -m compileall -q .
+      - echo "PYTHON_COMPILE=SUCCESS"
+
+      - echo "=== UNIT AND CONTRACT TEST ==="
+      - python -m pytest -q
+      - echo "PYTEST=SUCCESS"
+
+      - echo "=== STATIC ANALYSIS ==="
+      - >
+        python -m ruff check .
+        --select E9,F63,F7,F82
+        --exclude .git
+        --exclude __pycache__
+      - echo "STATIC_ANALYSIS=SUCCESS"
+
+      - echo "=== SMOKE SCRIPT COMPILE ==="
+      - python -m py_compile .devops/scripts/container-smoke.py
+      - echo "SMOKE_SCRIPT_COMPILE=SUCCESS"
+
+      - echo "=== DOCKER BUILD ==="
+      - docker build --tag "${IMAGE_URI}" .
+      - echo "DOCKER_BUILD=SUCCESS"
+
+      - echo "=== CONTAINER SOURCE COMPILE ==="
+      - |
+        docker run           --rm           --entrypoint python           "${IMAGE_URI}"           -c '
+        import pathlib
+        import py_compile
+
+        files = sorted(pathlib.Path("/app").glob("*.py"))
+
+        if not files:
+            raise RuntimeError("NO_RUNTIME_PYTHON_FILES")
+
+        for path in files:
+            py_compile.compile(
+                str(path),
+                doraise=True,
+            )
+
+        print(
+            f"CONTAINER_COMPILED_SOURCE_COUNT={len(files)}"
+        )
+        print("CONTAINER_SOURCE_COMPILE=SUCCESS")
+        '
+
+      - echo "=== CONTAINER IMPORT AND FILE SMOKE ==="
+      - |
+        docker run           --rm           --workdir /app           --env PYTHONPATH=/app           --env INTEREST_DB_PASSWORD=container-smoke-placeholder           --entrypoint python           --volume "${CODEBUILD_SRC_DIR}/.devops/scripts/container-smoke.py:/tmp/container-smoke.py:ro"           "${IMAGE_URI}"           /tmp/container-smoke.py
+
+      - echo "=== VERIFY DEFAULT CMD WITHOUT EXECUTION ==="
+      - |
+        IMAGE_CMD="$(
+          docker image inspect             "${IMAGE_URI}"             --format '{{json .Config.Cmd}}'
+        )"
+
+        echo "IMAGE_CMD=${IMAGE_CMD}"
+
+        if [[ "${IMAGE_CMD}" != '["python","daily_auto_buy_execute_run.py"]' ]]; then
+          echo "DEFAULT_CMD_CONTRACT=FAILED"
+          exit 30
+        fi
+
+        echo "DEFAULT_CMD_CONTRACT=SUCCESS"
+        echo "DEFAULT_CMD_EXECUTED=NO"
+
+      - echo "=== OPTIONAL VERIFIED IMAGE PUSH ==="
+      - |
+        if [[ "${PUSH_IMAGE}" == "true" ]]; then
+          aws ecr get-login-password             --region "${AWS_DEFAULT_REGION}" |
+            docker login               --username AWS               --password-stdin "${ECR_REGISTRY}"
+
+          docker push "${IMAGE_URI}"
+
+          IMAGE_DIGEST="$(
+            aws ecr describe-images               --region "${AWS_DEFAULT_REGION}"               --repository-name "${IMAGE_REPO_NAME}"               --image-ids imageTag="${IMAGE_TAG}"               --query "imageDetails[0].imageDigest"               --output text
+          )"
+
+          if [[ -z "${IMAGE_DIGEST}" || "${IMAGE_DIGEST}" == "None" ]]; then
+            echo "IMAGE_DIGEST_VERIFICATION=FAILED"
+            exit 40
+          fi
+
+          {
+            echo "IMAGE_URI=${IMAGE_URI}"
+            echo "IMAGE_DIGEST=${IMAGE_DIGEST}"
+            echo "ARTIFACT_PROMOTED_TO_ECR=YES"
+            echo "DEPLOYMENT_EXECUTED=NO"
+          } > evidence/image-digest.env
+
+          echo "IMAGE_DIGEST=${IMAGE_DIGEST}"
+          echo "ECR_PUSH=SUCCESS"
+          echo "DEPLOYMENT_EXECUTED=NO"
+        else
+          echo "ECR_PUSH=SKIPPED"
+          echo "DEPLOYMENT_EXECUTED=NO"
+        fi
+
+  post_build:
+    commands:
+      - |
+        if [[ "${CODEBUILD_BUILD_SUCCEEDING:-0}" == "1" ]]; then
+          echo "EXECUTION_CODEBUILD=SUCCESS"
+          echo "RELEASE_STAGE=BUILD_ONLY"
+          echo "ORDER_EXECUTION=DISABLED"
+        else
+          echo "EXECUTION_CODEBUILD=FAILED"
+          exit 50
+        fi
+
+artifacts:
+  files:
+    - evidence/**/*
+  discard-paths: no

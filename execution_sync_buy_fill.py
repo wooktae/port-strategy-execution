@@ -9,6 +9,11 @@ from decimal import Decimal
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
 from execution_repository import dumps_json
 
+CANCELED_REQUEST_STATUSES = {
+    "CANCELED",
+    "CANCELLED",
+}
+
 
 def to_decimal(value, default="0"):
     if value is None:
@@ -206,6 +211,54 @@ def mark_execution_order_filled(conn, execution_order, order_request, fill_summa
         "result_payload": dumps_json(result_payload),
     })
 
+def mark_execution_order_canceled(conn, execution_order, order_request):
+    """
+    Broker에서 정상 취소된 BUY 주문을 CANCELED로 마감한다.
+
+    정상 취소는 체결과 Position이 없는 terminal 상태다.
+    기존 result_payload에 sync_result를 추가해 취소 근거를 보존한다.
+    """
+
+    result_payload = execution_order.get("result_payload") or {}
+
+    sync_result = {
+        "source": "execution_sync_buy_fill",
+        "terminal_result": "CANCELED",
+        "connector_order_request_id": order_request.get("id"),
+        "connector_request_status": order_request.get("request_status"),
+        "broker_order_no": order_request.get("broker_order_no"),
+        "broker_branch_code": order_request.get("broker_branch_code"),
+        "fill_ids": [],
+        "fill_qty": 0,
+        "avg_fill_price": "0",
+        "fill_amount": "0",
+        "latest_fill_ts": None,
+        "canceled_at": str(order_request.get("last_event_at")),
+    }
+
+    result_payload["sync_result"] = sync_result
+
+    sql = """
+        UPDATE strategy_execution_order
+        SET
+            execution_status = 'CANCELED',
+            result_payload = %(result_payload)s::jsonb,
+            updated_at = now()
+        WHERE id = %(execution_order_id)s
+          AND execution_status = 'SUBMITTED'
+        RETURNING
+            id,
+            execution_status,
+            connector_order_request_id,
+            result_payload,
+            updated_at
+    """
+
+    return execute_one(conn, sql, {
+        "execution_order_id": execution_order["id"],
+        "result_payload": dumps_json(result_payload),
+    })
+
 
 def sync_one_order(conn, execution_order):
     """
@@ -226,12 +279,62 @@ def sync_one_order(conn, execution_order):
             "reason": "CONNECTOR_ORDER_REQUEST_NOT_FOUND",
         }
 
-    if order_request.get("request_status") != "FILLED":
+    request_status = str(
+        order_request.get("request_status") or ""
+    ).upper()
+
+    if request_status in CANCELED_REQUEST_STATUSES:
+        fills = get_connector_buy_fills(
+            conn=conn,
+            order_request_id=order_request_id,
+        )
+
+        if fills:
+            return {
+                "execution_order_id": execution_order["id"],
+                "connector_order_request_id": order_request_id,
+                "status": "ERROR",
+                "reason": "CANCELED_BUY_ORDER_HAS_FILL",
+            }
+
+        execution_update = mark_execution_order_canceled(
+            conn=conn,
+            execution_order=execution_order,
+            order_request=order_request,
+        )
+
+        if not execution_update:
+            return {
+                "execution_order_id": execution_order["id"],
+                "connector_order_request_id": order_request_id,
+                "status": "ERROR",
+                "reason": "EXECUTION_ORDER_CANCEL_UPDATE_NOT_APPLIED",
+            }
+
+        if execution_update.get("execution_status") != "CANCELED":
+            return {
+                "execution_order_id": execution_order["id"],
+                "connector_order_request_id": order_request_id,
+                "status": "ERROR",
+                "reason": (
+                    "EXECUTION_ORDER_STATUS_NOT_CANCELED:"
+                    f"{execution_update.get('execution_status')}"
+                ),
+            }
+
+        return {
+            "execution_order_id": execution_order["id"],
+            "connector_order_request_id": order_request_id,
+            "status": "CANCELED",
+            "execution_update": execution_update,
+        }
+
+    if request_status != "FILLED":
         return {
             "execution_order_id": execution_order["id"],
             "connector_order_request_id": order_request_id,
             "status": "SKIP",
-            "reason": f"CONNECTOR_ORDER_NOT_FILLED:{order_request.get('request_status')}",
+            "reason": f"CONNECTOR_ORDER_NOT_FILLED:{request_status}",
         }
 
     fills = get_connector_buy_fills(
@@ -310,7 +413,8 @@ def main():
         print(f"submitted_buy_orders : {len(orders)}")
 
         target_count = len(orders)
-        synced_count = 0
+        filled_count = 0
+        canceled_count = 0
         failed_count = 0
         results = []
 
@@ -319,13 +423,19 @@ def main():
             results.append(result)
 
             if result["status"] == "SYNCED":
-                synced_count += 1
+                filled_count += 1
+            elif result["status"] == "CANCELED":
+                canceled_count += 1
             else:
                 failed_count += 1
 
-        print(f"target_count  : {target_count}")
-        print(f"synced_count  : {synced_count}")
-        print(f"failed_count  : {failed_count}")
+        terminal_count = filled_count + canceled_count
+
+        print(f"target_count    : {target_count}")
+        print(f"filled_count    : {filled_count}")
+        print(f"canceled_count  : {canceled_count}")
+        print(f"terminal_count  : {terminal_count}")
+        print(f"failed_count    : {failed_count}")
 
         for result in results:
             print()
@@ -344,10 +454,14 @@ def main():
                 print(f"avg_fill_price           : {fs['avg_fill_price']}")
                 print(f"total_fill_amount        : {fs['total_fill_amount']}")
 
-        if failed_count > 0 or synced_count != target_count:
+        if failed_count > 0 or terminal_count != target_count:
             raise RuntimeError(
                 "BUY_FILL_SYNC_COUNT_MISMATCH: "
-                f"target={target_count}, synced={synced_count}, failed={failed_count}"
+                f"target={target_count}, "
+                f"filled={filled_count}, "
+                f"canceled={canceled_count}, "
+                f"terminal={terminal_count}, "
+                f"failed={failed_count}"
             )
 
         conn.commit()

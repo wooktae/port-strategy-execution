@@ -33,7 +33,15 @@ from execution_db import get_conn
 
 
 EXECUTION_MODE = "PAPER_STRATEGY"
-TERMINAL_ORDER_STATUS = "FILLED"
+FILLED_ORDER_STATUS = "FILLED"
+CANCELED_ORDER_STATUSES = {
+    "CANCELED",
+    "CANCELLED",
+}
+CANCELED_REQUEST_STATUSES = {
+    "CANCELED",
+    "CANCELLED",
+}
 ACTIVE_REQUEST_STATUSES = {
     "ACCEPTED",
     "SUBMITTED",
@@ -327,13 +335,20 @@ def _validate_order(
     order_id = order.get("id")
     plan_id = order.get("execution_plan_id")
     action_type = str(order.get("action_type") or "").upper()
-    execution_status = str(order.get("execution_status") or "").upper()
+    execution_status = str(
+        order.get("execution_status") or ""
+    ).upper()
     ticker_code = str(order.get("ticker_code") or "")
     order_qty = _to_int(order.get("order_qty"))
     request_id = order.get("connector_order_request_id")
 
     if plan_id is None:
-        _add_error(errors, order, "EXECUTION_PLAN_ID_MISSING", "order has no plan id")
+        _add_error(
+            errors,
+            order,
+            "EXECUTION_PLAN_ID_MISSING",
+            "order has no plan id",
+        )
     elif _fetch_one_by_id(conn, plan_table, plan_id) is None:
         _add_error(
             errors,
@@ -350,12 +365,20 @@ def _validate_order(
             f"order_qty={order.get('order_qty')}",
         )
 
-    if execution_status != TERMINAL_ORDER_STATUS:
+    valid_execution_statuses = (
+        {FILLED_ORDER_STATUS}
+        | CANCELED_ORDER_STATUSES
+    )
+
+    if execution_status not in valid_execution_statuses:
         _add_error(
             errors,
             order,
-            "EXECUTION_ORDER_NOT_FILLED",
-            f"execution_status={execution_status or 'NULL'}",
+            "EXECUTION_ORDER_NOT_TERMINAL",
+            (
+                "execution_status="
+                f"{execution_status or 'NULL'}"
+            ),
         )
 
     if request_id is None:
@@ -363,11 +386,16 @@ def _validate_order(
             errors,
             order,
             "CONNECTOR_ORDER_REQUEST_ID_MISSING",
-            "FILLED order has no connector_order_request_id",
+            "terminal order has no connector_order_request_id",
         )
         return errors
 
-    request = _fetch_one_by_id(conn, request_table, request_id)
+    request = _fetch_one_by_id(
+        conn,
+        request_table,
+        request_id,
+    )
+
     if request is None:
         _add_error(
             errors,
@@ -377,9 +405,15 @@ def _validate_order(
         )
         return errors
 
-    request_type = str(request.get("request_type") or "").upper()
-    request_status = str(request.get("request_status") or "").upper()
-    request_ticker = str(request.get("ticker_code") or "")
+    request_type = str(
+        request.get("request_type") or ""
+    ).upper()
+    request_status = str(
+        request.get("request_status") or ""
+    ).upper()
+    request_ticker = str(
+        request.get("ticker_code") or ""
+    )
     request_qty = _to_int(request.get("order_qty"))
 
     if request_type != action_type:
@@ -406,6 +440,67 @@ def _validate_order(
             f"order={order_qty}, request={request_qty}",
         )
 
+    fills = _load_fills(
+        conn=conn,
+        fill_table=fill_table,
+        order_request_id=request_id,
+    )
+
+    # -------------------------------------------------
+    # 1. 정상 취소 체인
+    # -------------------------------------------------
+    if execution_status in CANCELED_ORDER_STATUSES:
+        if request_status not in CANCELED_REQUEST_STATUSES:
+            _add_error(
+                errors,
+                order,
+                "CANCELED_ORDER_REQUEST_STATUS_MISMATCH",
+                (
+                    f"execution_status={execution_status}, "
+                    f"request_status={request_status or 'NULL'}"
+                ),
+            )
+
+        if fills:
+            fill_qty = sum(
+                _to_int(fill.get("fill_qty"))
+                for fill in fills
+            )
+            _add_error(
+                errors,
+                order,
+                "CANCELED_ORDER_HAS_FILL",
+                (
+                    f"connector_order_request_id={request_id}, "
+                    f"fill_count={len(fills)}, "
+                    f"fill_qty={fill_qty}"
+                ),
+            )
+
+        if action_type == "BUY":
+            position = _load_position_by_buy_order(
+                conn=conn,
+                position_table=position_table,
+                execution_order_id=order_id,
+                order_request_id=request_id,
+            )
+
+            if position is not None:
+                _add_error(
+                    errors,
+                    order,
+                    "CANCELED_BUY_HAS_POSITION_TRACE",
+                    (
+                        "canceled BUY must not create "
+                        "strategy_position_state"
+                    ),
+                )
+
+        return errors
+
+    # -------------------------------------------------
+    # 2. 정상 체결 체인
+    # -------------------------------------------------
     if request_status in ACTIVE_REQUEST_STATUSES:
         _add_error(
             errors,
@@ -415,20 +510,19 @@ def _validate_order(
         )
     elif request_status != "FILLED":
         state_class = (
-            "terminal" if request_status in TERMINAL_REQUEST_STATUSES else "unknown"
+            "terminal"
+            if request_status in TERMINAL_REQUEST_STATUSES
+            else "unknown"
         )
         _add_error(
             errors,
             order,
             "CONNECTOR_REQUEST_NOT_FILLED",
-            f"request_status={request_status or 'NULL'}, class={state_class}",
+            (
+                f"request_status={request_status or 'NULL'}, "
+                f"class={state_class}"
+            ),
         )
-
-    fills = _load_fills(
-        conn=conn,
-        fill_table=fill_table,
-        order_request_id=request_id,
-    )
 
     if not fills:
         _add_error(
@@ -439,7 +533,10 @@ def _validate_order(
         )
         return errors
 
-    fill_qty = sum(_to_int(fill.get("fill_qty")) for fill in fills)
+    fill_qty = sum(
+        _to_int(fill.get("fill_qty"))
+        for fill in fills
+    )
     fill_sides = {
         str(fill.get("side") or "").upper()
         for fill in fills
@@ -464,7 +561,10 @@ def _validate_order(
             errors,
             order,
             "ORDER_FILL_SIDE_MISMATCH",
-            f"order={action_type}, fills={sorted(fill_sides)}",
+            (
+                f"order={action_type}, "
+                f"fills={sorted(fill_sides)}"
+            ),
         )
 
     if fill_tickers and fill_tickers != {ticker_code}:
@@ -472,7 +572,10 @@ def _validate_order(
             errors,
             order,
             "ORDER_FILL_TICKER_MISMATCH",
-            f"order={ticker_code}, fills={sorted(fill_tickers)}",
+            (
+                f"order={ticker_code}, "
+                f"fills={sorted(fill_tickers)}"
+            ),
         )
 
     if action_type == "BUY":
@@ -482,6 +585,7 @@ def _validate_order(
             execution_order_id=order_id,
             order_request_id=request_id,
         )
+
         if position is None:
             _add_error(
                 errors,
@@ -490,17 +594,28 @@ def _validate_order(
                 "no strategy_position_state trace for BUY order",
             )
         else:
-            position_ticker = str(position.get("ticker_code") or "")
+            position_ticker = str(
+                position.get("ticker_code") or ""
+            )
+
             if position_ticker != ticker_code:
                 _add_error(
                     errors,
                     order,
                     "BUY_POSITION_TICKER_MISMATCH",
-                    f"order={ticker_code}, position={position_ticker}",
+                    (
+                        f"order={ticker_code}, "
+                        f"position={position_ticker}"
+                    ),
                 )
 
-            entry_qty = _to_int(position.get("entry_qty"))
-            remaining_qty = _to_int(position.get("remaining_qty"))
+            entry_qty = _to_int(
+                position.get("entry_qty")
+            )
+            remaining_qty = _to_int(
+                position.get("remaining_qty")
+            )
+
             if entry_qty <= 0:
                 _add_error(
                     errors,
@@ -508,16 +623,26 @@ def _validate_order(
                     "BUY_POSITION_ENTRY_QTY_INVALID",
                     f"entry_qty={entry_qty}",
                 )
-            if remaining_qty < 0 or remaining_qty > entry_qty:
+
+            if (
+                remaining_qty < 0
+                or remaining_qty > entry_qty
+            ):
                 _add_error(
                     errors,
                     order,
                     "BUY_POSITION_REMAINING_QTY_INVALID",
-                    f"remaining={remaining_qty}, entry={entry_qty}",
+                    (
+                        f"remaining={remaining_qty}, "
+                        f"entry={entry_qty}"
+                    ),
                 )
 
     if action_type == "SELL":
-        position_id = order.get("source_position_state_id")
+        position_id = order.get(
+            "source_position_state_id"
+        )
+
         if position_id is None:
             _add_error(
                 errors,
@@ -526,7 +651,12 @@ def _validate_order(
                 "SELL order has no source_position_state_id",
             )
         else:
-            position = _fetch_one_by_id(conn, position_table, position_id)
+            position = _fetch_one_by_id(
+                conn,
+                position_table,
+                position_id,
+            )
+
             if position is None:
                 _add_error(
                     errors,
@@ -535,16 +665,25 @@ def _validate_order(
                     f"source_position_state_id={position_id}",
                 )
             else:
-                position_ticker = str(position.get("ticker_code") or "")
+                position_ticker = str(
+                    position.get("ticker_code") or ""
+                )
+
                 if position_ticker != ticker_code:
                     _add_error(
                         errors,
                         order,
                         "SELL_POSITION_TICKER_MISMATCH",
-                        f"order={ticker_code}, position={position_ticker}",
+                        (
+                            f"order={ticker_code}, "
+                            f"position={position_ticker}"
+                        ),
                     )
 
-                remaining_qty = _to_int(position.get("remaining_qty"))
+                remaining_qty = _to_int(
+                    position.get("remaining_qty")
+                )
+
                 if remaining_qty < 0:
                     _add_error(
                         errors,
@@ -554,6 +693,7 @@ def _validate_order(
                     )
 
     return errors
+
 
 
 def validate_chain(
