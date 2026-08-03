@@ -48,19 +48,9 @@ phases:
           aws sts get-caller-identity             --query Account             --output text
         )"
 
-        ECR_REGISTRY="${
-          AWS_ACCOUNT_ID
-        }.dkr.ecr.${
-          AWS_DEFAULT_REGION
-        }.amazonaws.com"
+        ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
 
-        IMAGE_URI="${
-          ECR_REGISTRY
-        }/${
-          IMAGE_REPO_NAME
-        }:${
-          IMAGE_TAG
-        }"
+        IMAGE_URI="${ECR_REGISTRY}/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
 
         export SOURCE_SHA
         export IMAGE_TAG
@@ -94,7 +84,7 @@ phases:
       - echo "PYTHON_COMPILE=SUCCESS"
 
       - echo "=== UNIT AND CONTRACT TEST ==="
-      - python -m pytest -q
+      - INTEREST_DB_PASSWORD=codebuild-test-placeholder python -m pytest -q
       - echo "PYTEST=SUCCESS"
 
       - echo "=== STATIC ANALYSIS ==="
