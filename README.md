@@ -394,16 +394,31 @@ Candidate
 ## 9. BUY Sizing 계약
 
 `execution_buy_sizing.py`는 BUY Signal을 실제 주문 수량으로 변환하는 계산 계층이다.
+현재 주문은 시장가(`MARKET`) 기준이며, 시장가 체결 변동에 대비해 현금 Reserve를 적용한다.
 
 | 입력 | 확인 내용 |
 |---|---|
-| Target Amount | 전략 목표 금액 |
+| Target Amount | 총 평가금액과 목표 비중 기반 목표 보유 금액 |
 | Available Cash | 사용 가능한 현금 |
 | Current Holding | 현재 보유 수량과 평가액 |
-| Latest Price | 주문 수량 계산 기준 가격 |
+| Latest Price | 수량 계산 기준 최신 가격 |
 | Maximum Ratio | 최대 주문 금액 비율 |
 | Minimum Amount | 최소 주문 금액 |
 | Rounding | 정수 수량과 절사 기준 |
+
+시장가 BUY 수량과 필요 현금은 Reserve Ratio `1.10`을 기준으로 계산한다.
+
+| 항목 | 기준 |
+|---|---|
+| Reserve Ratio | `MARKET_BUY_CASH_RESERVE_RATIO`는 `1.10` |
+| 유효 주문가격 | 수량 계산 시 `latest_price`의 110% 적용 |
+| 수량 절사 | 유효 주문가격 기준 정수 수량 절사 |
+| 예상 주문금액 | `latest_price * order_qty` |
+| 필요 현금 | 예상 주문금액의 110%(`required_cash_amount`) |
+| 현금 검증 | 필요 현금이 가용현금을 넘으면 BLOCKED |
+
+예상 주문금액과 Reserve 포함 필요 현금을 구분한다.
+Reserve 적용 자체가 Broker 주문가능금액을 보장하지 않는다.
 
 아래 상황을 명확히 구분한다.
 
@@ -426,11 +441,11 @@ Sizing 로직 변경은 실제 주문 금액에 직접 영향을 준다.
 |---|---|
 | 처리 순서 | 확정된 후보 순서를 유지 |
 | 누적 현금 | 하나의 Daily Plan 안에서 잔여 가용현금 관리 |
-| READY 차감 | READY 주문의 예상 주문 금액만 다음 후보에서 차감 |
+| READY 차감 | READY 주문의 Reserve 포함 필요 현금을 다음 후보에서 차감 |
 | BLOCKED · 0주 | 가용현금을 차감하지 않음 |
 | 초과 방지 | 후속 BUY가 잔여 현금을 초과하면 축소 또는 차단 |
-| 시장가 여유 | 기존 안전 여유 정책 유지 |
-| 추적성 | 후보별 입력 가용현금과 예상 주문 금액을 Payload에 유지 |
+| 차감 기준 | 예상 주문금액이 아니라 110% 필요 현금 기준 |
+| 추적성 | 후보별 가용현금·예상 주문금액·필요 현금을 Payload에 유지 |
 
 단일 종목 Sizing 함수와 Plan 단위 누적 배분 책임을 구분한다.
 후속 후보 계산에 최초 가용현금을 그대로 재사용하지 않는다.
@@ -894,6 +909,8 @@ git diff --stat
 |---|---|
 | Docker Image | Git SHA 기반 Image와 Candidate Task Definition 검증 방식 |
 | Docker CMD | 기본 CMD는 `python daily_auto_buy_execute_run.py` (실행 없이 확인) |
+| MARKET BUY Reserve | 시장가 수량·필요 현금에 110% Reserve 적용 |
+| 누적 현금 배분 | READY 후보의 Reserve 포함 필요 현금을 순차 차감 |
 | Step 15 CANCELED | 정상 취소를 실패가 아닌 별도 Terminal로 처리 |
 | BUY Position 생성 조건 | FILLED BUY만 대상, CANCELED BUY는 제외 |
 | 운영 State Machine 참조 | Execution 관련 5개 State가 새 Revision 참조 |
@@ -912,6 +929,9 @@ git diff --stat
 | Intraday | 점검 저장과 Order 생성 Transaction 경계 |
 | Execution Mode | 각 모드의 실제 허용 조건 |
 | External Import | MarketConnector·Holiday Helper 실제 경로 |
+| Available Cash | Execution 가용현금과 Broker 주문가능금액 차이 |
+| READY Plan Count | 복구 재실행의 Actionable·Terminal Count 계약 |
+| FAILED·REJECTED Chain | Validator의 Terminal Failure 분류 기준 |
 
 확인되지 않은 내용은 운영 사실로 단정하지 않는다.
 

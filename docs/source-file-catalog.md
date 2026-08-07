@@ -192,7 +192,7 @@ Connector Account · Balance · Position
 | `.dockerignore` | Token·`.devops`·`tests`·`docs`를 Image에서 제외 |
 | `.gitignore` | `access_token.txt`와 로컬 산출물 Git 제외 |
 | `pytest.ini` | `tests` 대상 테스트 설정 |
-| `tests/` | 취소·현금 배분·체인·Container 계약 테스트 |
+| `tests/` | 취소·다중 후보 순차 현금 배분·MARKET BUY 110% Reserve·체인·Container 계약 테스트 |
 
 CI는 Build·Test·ECR·Token 제외 책임만 가지며 ECS·Step Functions·주문을 실행하지 않는다.
 
@@ -241,30 +241,33 @@ CI는 Build·Test·ECR·Token 제외 책임만 가지며 ECS·Step Functions·�
 | 항목 | 값 |
 |---|---|
 | 책임 | Daily BUY Signal을 Order Payload로 변환 |
-| 입력 | Signal, Current Holding, Price, Sizing 결과 |
+| 입력 | Signal, Current Holding, Latest Price, Sizing 결과 |
 | 출력 | Order 구조와 Validation Result·Order Snapshot |
-| 누적 현금 | 후보별 Sizing 입력과 예상 주문 금액을 순차 배분 |
-| 결과 전달 | READY·BLOCKED 결과와 잔여 현금 흐름 관리 |
+| 누적 현금 | 후보 순서를 유지하며 Plan 내 잔여 현금을 순차 배분 |
+| READY 차감 | READY 후보의 Reserve 포함 필요 현금을 잔여 현금에서 차감 |
+| BLOCKED · 0주 | 잔여 현금을 차감하지 않음 |
+| 재사용 금지 | 후속 후보에 최초 가용현금을 그대로 재사용하지 않음 |
 | DB 영향 | 직접 없음, Repository 조회 Helper 사용 |
 | 주요 계약 | Source ID, Ticker, Side, Quantity, Reason |
 | 변경 위험 | Signal 추적성 손실, 수량·가격·현금 배분 의미 변화 |
-| 확인 대상 | 필수 Field, Validation, Skip Reason, 후보 순서 |
+| 확인 대상 | 필수 Field, Validation, 후보 순서, 잔여 현금 경계 |
 | 주의 | Builder 결과가 실제 주문 성공을 의미하지 않음 |
 
 ### `execution_buy_sizing.py`
 
 | 항목 | 값 |
 |---|---|
-| 책임 | BUY 주문 가능 수량 계산 |
-| 입력 | Target Amount, Available Cash, Current Holding, Price |
-| 출력 | Quantity, Amount와 Skip Reason 후보 |
+| 책임 | 단일 BUY 후보의 주문 가능 수량과 필요 현금 계산 |
+| 입력 | Target Amount, Available Cash, Current Holding, Latest Price |
+| 출력 | order_qty, estimated_order_amount, required_cash_amount, sizing_detail |
+| MARKET Reserve | 수량·필요 현금에 110%(`MARKET_BUY_CASH_RESERVE_RATIO`) 적용 |
+| 유효 가격 | 수량 계산 시 `latest_price`의 110% 사용 |
+| 금액 구분 | 예상 주문금액과 Reserve 포함 필요 현금 분리 |
 | DB 영향 | 직접 없음 |
-| 주요 계약 | 최대 비율, 최소 주문 금액, 정수 수량 |
-| 책임 경계 | 단일 BUY 후보 수량 계산만 담당 |
-| 다중 후보 | 여러 후보 잔여 현금 배분은 Builder·Repository 흐름에서 확인 |
-| 변경 위험 | 실제 주문 금액과 종목 집중도 변화 |
-| 확인 대상 | 절사·반올림, 0 Price, Cash 부족, 기존 보유 |
-| 테스트 관점 | Boundary와 Decimal 계산을 우선 확인 |
+| 책임 경계 | 단일 BUY 후보 계산만 담당, Broker 주문가능금액은 보장하지 않음 |
+| 다중 후보 | 여러 후보 누적 현금 배분은 Signal Builder 흐름에서 확인 |
+| 변경 위험 | 실제 주문 수량·현금 경계·Decimal·0주·최소 금액 처리 |
+| 확인 대상 | 절사, 0 Price, Cash 부족, 기존 보유 |
 
 ## 7. Daily SELL 후보 생성
 
@@ -650,6 +653,7 @@ Plan 생성 성공을 하위 Order 전체 성공으로 해석하지 않는다.
 |---|---|
 | Execution 사용 | BUY·SELL Helper, Quote, Connector Table |
 | 책임 경계 | Broker·KIS API와 Token은 MarketConnector 책임 |
+| 주문가능금액 | Broker 실제 주문가능금액 계산은 MarketConnector 책임 |
 | 수정 범위 | Execution 요청만으로 외부 저장소 수정 금지 |
 | 주요 위험 | 외부 성공 후 Execution DB 연결 실패 |
 | 확인 대상 | Import 경로, 함수 Signature, 반환 계약 |

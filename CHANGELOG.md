@@ -5,6 +5,103 @@
 현재 구조와 사용 방법은 `README.md`, 작업 규칙은 `AGENTS.md`,
 파일별 책임과 영향은 `docs/source-file-catalog.md`를 기준으로 확인한다.
 
+## 2026-08-07
+
+### MARKET BUY 현금 보호
+
+| 항목 | 변경 내용 |
+|---|---|
+| Reserve Ratio | MARKET BUY에 110% 현금 Reserve 적용 |
+| 유효 가격 | 수량 계산 시 최신 가격의 110% 사용 |
+| 수량 절사 | 유효 주문가격 기준 정수 수량 절사 |
+| 금액 구분 | 예상 주문금액과 Reserve 포함 필요 현금 분리 |
+| 순차 차감 | READY 후보의 필요 현금 기준 잔여 현금 차감 |
+| 재사용 방지 | 후속 후보에 최초 가용현금 재사용 금지 |
+| 추적성 | Validation·Snapshot Payload에 배분 근거 유지 |
+
+### 테스트와 배포
+
+| 항목 | 결과 |
+|---|---|
+| Python Compile | 성공 |
+| 현금 배분 테스트 | 대상 5건 성공 |
+| 전체 테스트 | 22건 성공 |
+| GitHub Actions | 성공 |
+| CodeBuild | 성공 |
+| Image | Git SHA 기반 Execution Image 생성 |
+| Task Definition | 신규 Execution Revision 등록 |
+| Candidate Smoke | Compile Smoke 성공 |
+| State 참조 | Execution State를 신규 Revision으로 승격 |
+| 이전 참조 | 이전 Revision 참조 잔존 없음 확인 |
+
+### Daily 장애 확인
+
+| 항목 | 결과 |
+|---|---|
+| Step 8 Revision | 오래된 Execution Task Definition 참조 |
+| 현금 중복 | 다중 BUY 후보가 동일 최초 가용현금 기준 계산 |
+| 주문 초과 | BUY 수량이 계좌 주문가능 범위 초과 |
+| 주문 거절 | BUY가 Broker 주문가능금액 부족으로 거절 |
+| SELL | 기존 SELL 주문 정상 체결 |
+| 외부 Batch | 과거 Daily Batch 한 건 장기 RUNNING 잔존 |
+| Recorder | ok=false 실패가 Step Functions에 성공처럼 전파되는 문제 확인 |
+
+Batch Recorder와 Step Functions 전체 정의는 Execution 소유가 아니며,
+운영 Orchestration 문제로만 기록한다.
+
+### Daily 복구
+
+| 항목 | 결과 |
+|---|---|
+| 잔존 Batch | RUNNING Batch를 FAILED로 종료 |
+| 후보 재생성 | 신규 Revision으로 BUY 후보 재계산 |
+| Reserve 적용 | 누적 현금 배분과 110% Reserve 확인 |
+| BUY 체결 | BUY 1건 정상 체결 |
+| BUY Fill Sync | 성공 |
+| BUY Position Sync | 성공 |
+| BUY 거절 | BUY 1건 Broker 주문가능금액 부족으로 REJECTED |
+| SELL | 기존 SELL FILLED 유지 |
+| Validator | Order Chain Validator 실행 |
+| 최종 상태 | 거절 BUY 체인으로 Daily Step12~17 FAILED 유지 |
+
+### 후속 확인 후보
+
+| 항목 | 확인 필요 |
+|---|---|
+| READY Plan Count | Actionable·Terminal Order Count 계약 정리 |
+| Terminal 분류 | FAILED·REJECTED를 Terminal Failure Chain으로 분류 |
+| 주문가능금액 | Broker 주문가능금액과 Available Cash 정합 |
+| Recorder 전파 | ok=false의 Step Functions 실패 전파 방식 |
+
+위 항목은 확인 후보이며 현재 코드로 완료된 변경이 아니다.
+
+### 변경 파일
+
+| 항목 | 값 |
+|---|---|
+| Python | `execution_buy_sizing.py`, `execution_daily_signal_builder.py` |
+| 테스트 | `tests/test_execution_daily_signal_cash_allocation.py` |
+| 문서 | `README.md`, `CHANGELOG.md`, `docs/source-file-catalog.md` |
+
+실제 반영 파일은 Git Diff 기준이며, 추정 파일명은 기록하지 않는다.
+
+### 작업 경계
+
+| 항목 | 결과 |
+|---|---|
+| Paper 주문 복구 | 실제 복구 실행 수행 |
+| Connector 주문·조회 | 수행 |
+| Fill Sync | 수행 |
+| Position Sync | 수행 |
+| Validator | 수행 |
+| DB DDL | 수행하지 않음 |
+| 상태 왜곡 | FAILED·REJECTED를 성공으로 변경하지 않음 |
+| 일회성 식별자 | Order·Request·Broker 번호 미기록 |
+| Secret·Token 원문 | 조회·기록하지 않음 |
+
+이번 Kiro 문서 작업은 정적 파일 확인만 수행했다.
+위 운영 검증은 당일 수행된 결과를 문서화 근거로만 사용했다.
+
 ## 2026-08-03
 
 ### Execution 오류 개선
