@@ -8,6 +8,8 @@ from decimal import Decimal, ROUND_DOWN
 
 
 SIZING_METHOD_TOTAL_EVAL_REBALANCE_V1 = "TOTAL_EVAL_TARGET_REBALANCE_V1"
+MARKET_BUY_CASH_RESERVE_RATIO = Decimal("1.10")
+MARKET_BUY_CASH_RESERVE_POLICY = "ESTIMATED_ORDER_AMOUNT_110_PERCENT"
 
 
 def to_decimal(value, default="0"):
@@ -70,7 +72,9 @@ def calculate_buy_order_sizing(
     1) target_position_amount = total_eval_amount * position_size
     2) additional_buy_amount = target_position_amount - current_position_eval_amount
     3) capped_buy_amount = min(additional_buy_amount, available_cash, max_order_amount)
-    4) order_qty = floor(capped_buy_amount / latest_price)
+    4) effective_order_price = latest_price * 1.10
+    5) order_qty = floor(capped_buy_amount / effective_order_price)
+    6) required_cash_amount = estimated_order_amount * 1.10
     """
 
     validation_reasons = []
@@ -120,6 +124,8 @@ def calculate_buy_order_sizing(
     capped_buy_amount = Decimal("0")
     order_qty = 0
     estimated_order_amount = Decimal("0")
+    required_cash_amount = Decimal("0")
+    effective_order_price = Decimal("0")
 
     if not validation_reasons:
         target_position_amount = total_eval_amount * position_size
@@ -144,14 +150,29 @@ def calculate_buy_order_sizing(
             validation_reasons.append("capped_buy_amount < min_order_amount")
 
     if not validation_reasons:
+        effective_order_price = (
+            latest_price * MARKET_BUY_CASH_RESERVE_RATIO
+        )
         order_qty = int(
-            (capped_buy_amount / latest_price).to_integral_value(rounding=ROUND_DOWN)
+            (
+                capped_buy_amount / effective_order_price
+            ).to_integral_value(rounding=ROUND_DOWN)
         )
 
         if order_qty <= 0:
-            validation_reasons.append("order_qty <= 0")
+            validation_reasons.append(
+                "order_qty <= 0 after market buy cash reserve"
+            )
 
         estimated_order_amount = latest_price * Decimal(order_qty)
+        required_cash_amount = (
+            estimated_order_amount * MARKET_BUY_CASH_RESERVE_RATIO
+        )
+
+        if required_cash_amount > available_cash:
+            validation_reasons.append(
+                "required_cash_amount > available_cash"
+            )
 
         if min_order_amount_decimal > 0 and estimated_order_amount < min_order_amount_decimal:
             validation_reasons.append("estimated_order_amount < min_order_amount")
@@ -180,6 +201,14 @@ def calculate_buy_order_sizing(
 
         "order_qty": order_qty,
         "estimated_order_amount": str(estimated_order_amount),
+        "required_cash_amount": str(required_cash_amount),
+        "effective_order_price": str(effective_order_price),
+        "market_buy_cash_reserve_ratio": str(
+            MARKET_BUY_CASH_RESERVE_RATIO
+        ),
+        "market_buy_cash_reserve_policy": (
+            MARKET_BUY_CASH_RESERVE_POLICY
+        ),
         "validation_reasons": validation_reasons,
     }
 
@@ -187,6 +216,13 @@ def calculate_buy_order_sizing(
         "order_qty": order_qty,
         "target_amount": capped_buy_amount,
         "estimated_order_amount": estimated_order_amount,
+        "required_cash_amount": required_cash_amount,
+        "market_buy_cash_reserve_ratio": (
+            MARKET_BUY_CASH_RESERVE_RATIO
+        ),
+        "market_buy_cash_reserve_policy": (
+            MARKET_BUY_CASH_RESERVE_POLICY
+        ),
         "sizing_detail": sizing_detail,
         "validation_reasons": validation_reasons,
     }

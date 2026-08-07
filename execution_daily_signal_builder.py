@@ -237,6 +237,13 @@ def build_daily_signal_buy_execution_order(
     order_qty = sizing_result["order_qty"]
     order_price = latest_price
     estimated_order_amount = sizing_result["estimated_order_amount"]
+    required_cash_amount = sizing_result["required_cash_amount"]
+    market_buy_cash_reserve_ratio = sizing_result[
+        "market_buy_cash_reserve_ratio"
+    ]
+    market_buy_cash_reserve_policy = sizing_result[
+        "market_buy_cash_reserve_policy"
+    ]
     sizing_detail = sizing_result["sizing_detail"]
 
     # -------------------------------------------------
@@ -253,7 +260,7 @@ def build_daily_signal_buy_execution_order(
     # 4. validation_result 저장
     # -------------------------------------------------
     reserved_amount = (
-        min(estimated_order_amount, available_cash)
+        min(required_cash_amount, available_cash)
         if execution_status == "READY"
         else Decimal("0")
     )
@@ -274,7 +281,15 @@ def build_daily_signal_buy_execution_order(
             "available_cash_after_order": str(
                 available_cash_after_order
             ),
-            "reserve_basis": "estimated_order_amount",
+            "reserve_basis": "required_cash_amount",
+            "estimated_order_amount": str(estimated_order_amount),
+            "required_cash_amount": str(required_cash_amount),
+            "market_buy_cash_reserve_ratio": str(
+                market_buy_cash_reserve_ratio
+            ),
+            "market_buy_cash_reserve_policy": (
+                market_buy_cash_reserve_policy
+            ),
         },
 
         # 신규 구조: View / 운영 화면에서 구조적으로 표시하기 좋게 분리
@@ -306,6 +321,10 @@ def build_daily_signal_buy_execution_order(
             "latest_price": str(latest_price) if latest_price is not None else None,
             "target_amount": str(target_amount),
             "estimated_order_amount": str(estimated_order_amount),
+            "required_cash_amount": str(required_cash_amount),
+            "market_buy_cash_reserve_ratio": str(
+                market_buy_cash_reserve_ratio
+            ),
             "order_qty": order_qty,
             "order_price": str(order_price) if order_price is not None else None,
             "order_method": "MARKET",
@@ -338,6 +357,13 @@ def build_daily_signal_buy_execution_order(
 
         "target_amount": str(target_amount),
         "estimated_order_amount": str(estimated_order_amount),
+        "required_cash_amount": str(required_cash_amount),
+        "market_buy_cash_reserve_ratio": str(
+            market_buy_cash_reserve_ratio
+        ),
+        "market_buy_cash_reserve_policy": (
+            market_buy_cash_reserve_policy
+        ),
         "order_qty": order_qty,
 
         "sizing_detail": sizing_detail,
@@ -392,6 +418,7 @@ def build_daily_signal_buy_execution_order(
         # 여러 BUY 후보의 순차 현금 예약 계산용 내부 값.
         # Repository 저장 컬럼은 아니며 호출자가 다음 후보 잔액을 계산한다.
         "estimated_order_amount": estimated_order_amount,
+        "required_cash_amount": required_cash_amount,
 
         "execution_status": execution_status,
         "block_reason": block_reason,
@@ -414,7 +441,7 @@ def build_daily_signal_execution_orders(
 
     정책:
     - 최초 orderable_cash를 전체 후보의 공통 예산으로 사용
-    - READY 주문의 estimated_order_amount만 다음 후보 예산에서 차감
+    - READY 주문의 required_cash_amount(예상 주문금액 110%)를 다음 후보 예산에서 차감
     - BLOCKED 주문은 현금을 예약하지 않음
     - 잔여 현금은 0 미만으로 내려가지 않음
     """
@@ -451,7 +478,7 @@ def build_daily_signal_execution_orders(
             reserved_amount = min(
                 to_decimal(
                     order_data.get(
-                        "estimated_order_amount"
+                        "required_cash_amount"
                     ),
                     "0",
                 ),
