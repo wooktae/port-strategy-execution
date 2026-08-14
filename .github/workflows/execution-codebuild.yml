@@ -1,6 +1,10 @@
 name: Execution CodeBuild
 
 on:
+  push:
+    branches:
+      - main
+
   workflow_dispatch:
     inputs:
       push_image:
@@ -13,34 +17,110 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: execution-release-main
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  PROJECT_NAME: portfolio-strategy-execution-build
+  ECR_REPOSITORY: portfolio-strategy-execution
+
 jobs:
   codebuild:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
-          aws-region: ap-northeast-2
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Start Execution CodeBuild
+      - name: Resolve release mode
+        id: release
         shell: bash
         env:
-          PROJECT_NAME: portfolio-strategy-execution-build
-          PUSH_IMAGE: ${{ inputs.push_image }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PUSH_IMAGE: ${{ inputs.push_image }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          PUSH_VALUE="false"
+          IMAGE_TAG="${SOURCE_SHA:0:12}"
 
-          if [[ "${PUSH_IMAGE}" == "true" ]]; then
-            PUSH_VALUE="true"
+          PUSH_IMAGE=false
+          AUTO_RELEASE=false
+          ARTIFACT_EXISTS=false
+
+          set +e
+          EXISTING_DIGEST="$(
+            aws ecr describe-images \
+              --region "${AWS_REGION}" \
+              --repository-name "${ECR_REPOSITORY}" \
+              --image-ids "imageTag=${IMAGE_TAG}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text \
+              2>/dev/null
+          )"
+          LOOKUP_EXIT=$?
+          set -e
+
+          if [[ "${LOOKUP_EXIT}" -eq 0 \
+             && -n "${EXISTING_DIGEST}" \
+             && "${EXISTING_DIGEST}" != "None" ]]; then
+            ARTIFACT_EXISTS=true
           fi
 
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            AUTO_RELEASE=true
+
+            if [[ "${ARTIFACT_EXISTS}" != "true" ]]; then
+              PUSH_IMAGE=true
+            fi
+
+          elif [[ "${DISPATCH_PUSH_IMAGE:-false}" == "true" ]]; then
+
+            if [[ "${ARTIFACT_EXISTS}" != "true" ]]; then
+              PUSH_IMAGE=true
+            fi
+          fi
+
+          echo "push_image=${PUSH_IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "auto_release=${AUTO_RELEASE}" >> "${GITHUB_OUTPUT}"
+
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "ARTIFACT_EXISTS=${ARTIFACT_EXISTS}"
+          echo "PUSH_IMAGE=${PUSH_IMAGE}"
+          echo "AUTO_RELEASE=${AUTO_RELEASE}"
+
+          if [[ "${ARTIFACT_EXISTS}" == "true" ]]; then
+            echo "ARTIFACT_REUSE=YES"
+            echo "EXISTING_IMAGE_DIGEST=${EXISTING_DIGEST}"
+          else
+            echo "ARTIFACT_REUSE=NO"
+          fi
+
+      - name: Start Execution CodeBuild
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          PUSH_IMAGE: ${{ steps.release.outputs.push_image }}
+        run: |
+          set -euo pipefail
+
           BUILD_ID="$(
-            aws codebuild start-build               --project-name "${PROJECT_NAME}"               --source-version "${SOURCE_SHA}"               --environment-variables-override                 name=PUSH_IMAGE,value="${PUSH_VALUE}",type=PLAINTEXT                 name=RELEASE_STAGE,value=BUILD_ONLY,type=PLAINTEXT               --query "build.id"               --output text
+            aws codebuild start-build \
+              --project-name "${PROJECT_NAME}" \
+              --source-version "${SOURCE_SHA}" \
+              --environment-variables-override \
+                name=PUSH_IMAGE,value="${PUSH_IMAGE}",type=PLAINTEXT \
+                name=RELEASE_STAGE,value=BUILD_ONLY,type=PLAINTEXT \
+              --query "build.id" \
+              --output text
           )"
 
           if [[ -z "${BUILD_ID}" || "${BUILD_ID}" == "None" ]]; then
@@ -50,27 +130,27 @@ jobs:
 
           echo "BUILD_ID=${BUILD_ID}"
           echo "SOURCE_SHA=${SOURCE_SHA}"
-          echo "PUSH_IMAGE=${PUSH_VALUE}"
+          echo "PUSH_IMAGE=${PUSH_IMAGE}"
           echo "RELEASE_STAGE=BUILD_ONLY"
-          echo "ORDER_EXECUTION=DISABLED"
 
           while true; do
             BUILD_STATUS="$(
-              aws codebuild batch-get-builds                 --ids "${BUILD_ID}"                 --query "builds[0].buildStatus"                 --output text
+              aws codebuild batch-get-builds \
+                --ids "${BUILD_ID}" \
+                --query "builds[0].buildStatus" \
+                --output text
             )"
 
             echo "BUILD_STATUS=${BUILD_STATUS}"
 
             case "${BUILD_STATUS}" in
               SUCCEEDED)
-                echo "EXECUTION_CODEBUILD_TRIGGER=SUCCESS"
-                echo "DEPLOYMENT_EXECUTED=NO"
-                echo "PROGRESSIVE_RELEASE_EXECUTED=NO"
+                echo "EXECUTION_CODEBUILD=SUCCESS"
                 break
                 ;;
 
               FAILED|FAULT|STOPPED|TIMED_OUT)
-                echo "EXECUTION_CODEBUILD_TRIGGER=FAILED"
+                echo "EXECUTION_CODEBUILD=FAILED"
                 exit 20
                 ;;
 
@@ -84,3 +164,13 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Automatic Execution release
+        if: steps.release.outputs.auto_release == 'true'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          bash .devops/scripts/deploy-execution.sh
