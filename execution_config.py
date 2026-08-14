@@ -15,7 +15,10 @@ from db_config import get_db_config
 DB_CONFIG = get_db_config()
 
 
-ACCOUNT_NO = os.getenv("PORT_ACCOUNT_NO", "50187518")
+ACCOUNT_NO = os.getenv("PORT_ACCOUNT_NO")
+
+if not ACCOUNT_NO:
+    raise RuntimeError("PORT_ACCOUNT_NO is required")
 BROKER_NAME = os.getenv("PORT_BROKER_NAME", "koreainvestment")
 ENVIRONMENT = os.getenv("PORT_ENVIRONMENT", "paper")
 

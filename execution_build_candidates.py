@@ -1,3 +1,4 @@
+import os
 # C:\Workspaces\port_strategy_execution\execution_build_candidates.py
 
 """
@@ -15,7 +16,10 @@ import psycopg2.extras
 from db_config import get_db_config
 
 
-ACCOUNT_NO = "50187518"
+ACCOUNT_NO = os.getenv("PORT_ACCOUNT_NO")
+
+if not ACCOUNT_NO:
+    raise RuntimeError("PORT_ACCOUNT_NO is required")
 BROKER_NAME = "koreainvestment"
 ENVIRONMENT = "paper"
 
