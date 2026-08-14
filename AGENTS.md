@@ -468,6 +468,9 @@ DB 변경 시 아래를 확인한다.
 - default 값은 실제 코드에 있고 민감하지 않은 경우에만 기록한다.
 - local·paper·live 환경 값과 계좌를 혼합하지 않는다.
 - execution schema search path는 실제 connection 설정과 문서가 일치하는지 확인한다.
+- `PORT_ACCOUNT_NO`는 `execution_config.py`에서 필수이며 미설정 시 fail-fast다. 코드 Fallback을 만들지 않는다.
+- `PORT_ACCOUNT_NO` 설정 변경 시 Runtime뿐 아니라 pytest·Container Smoke 같은 CI Harness 계약도 함께 확인한다.
+- CI Harness에는 실제 계좌번호가 아닌 test placeholder만 사용하고, 실제 계좌번호와 Secret 원문은 기록하지 않는다.
 
 ## 22. 외부 의존성
 
@@ -631,22 +634,35 @@ Container 배포 검증은 아래 순서를 기본으로 한다.
 
 ## 30. DevOps CI와 State Machine 작업 규칙
 
-Execution DevOps 작업은 아래를 지킨다.
+현재 Execution은 main Push 기반 Automatic no-order Release로 구성된다.
+아래 책임 경계를 유지한다.
 
-- CI는 GitHub Actions → OIDC → CodeBuild → ECR Build-only 경로다.
-- Build 성공을 운영 배포 성공이나 주문 실행으로 간주하지 않는다.
-- Candidate는 운영 Task Definition을 복제한 Standalone Task로 검증한다.
-- Candidate Revision을 운영 Service에 직접 승격하지 않는다.
+- CI 경로는 GitHub Actions → OIDC → Execution 전용 CodeBuild다.
+- CodeBuild는 Build·Test·Container Smoke·ECR Artifact 생성 책임만 갖는다.
+- GitHub Workflow는 Release control-plane 책임을 가질 수 있다.
+- Release control-plane의 State Machine Definition update와 State Machine 실행은 전혀 다른 작업이다.
+- Build·Release Build 성공을 운영 주문 실행 성공으로 간주하지 않는다.
 
-State Machine 참조 작업 시 아래를 지킨다.
+Automatic Release가 가능하더라도 아래는 Release Pipeline에서 수행하지 않는다.
 
-- 승격 전 Live Definition과 Revision ID를 백업한다.
+- 주문 실행과 Broker·KIS 호출
+- DB DML과 DB Write
+- `ecs:RunTask`
+- `states:StartExecution`
+- `ssm:SendCommand`
+
+State Machine Definition 참조 작업 시 아래를 지킨다.
+
+- 승격 전 Live Definition을 백업한다.
 - 대상 Task Definition 참조 수와 State 이름을 확인한다.
-- 실행 중 Workflow 0건을 확인한다.
+- Stale Promotion Guard로 기준선 변경을 확인한다.
 - 변경 전후 참조 개수를 확인한다.
-- Rollback Definition을 별도로 보존한다.
-- 승격·Rollback 과정에서 Workflow를 자동 실행하지 않는다.
-- Revision 변경과 Daily 실행을 별도 승인으로 취급한다.
+- Rollback Definition을 별도로 보존하고 실패 시 자동 Rollback 경로를 유지한다.
+- Release 과정에서 State Machine 자체를 실행하지 않는다.
+- Definition Promotion과 실제 Daily 주문 실행은 서로 다른 영향으로 구분한다.
+
+DevOps Architecture, IAM 상세 정책, 전체 Promotion/Rollback 설계와 공통 Release 전략은
+이 문서에 복제하지 않고 `port-devops` Repository에서 관리한다.
 
 Kiro 문서 작업에서는 아래를 지킨다.
 

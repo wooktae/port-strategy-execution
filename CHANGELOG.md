@@ -5,6 +5,78 @@
 현재 구조와 사용 방법은 `README.md`, 작업 규칙은 `AGENTS.md`,
 파일별 책임과 영향은 `docs/source-file-catalog.md`를 기준으로 확인한다.
 
+## 2026-08-14
+
+### main Push Automatic Release 구성
+
+| 항목 | 변경 내용 |
+|---|---|
+| Trigger | main Push 기반 Automatic no-order Release 구성 |
+| CI 인증 | GitHub Actions → OIDC → Execution 전용 CodeBuild |
+| CodeBuild 범위 | Compile·pytest·Ruff·Docker Build·Container Source Compile·Container Import/File Smoke |
+| Artifact | 검증 성공 시 Git SHA 기반 ECR Image Publish |
+| Release control-plane | GitHub Workflow가 후속 운영 Promotion 수행 |
+| 승인 단계 | 수동 Approve 단계 없음 |
+
+### Release 책임 경계
+
+| 항목 | 결과 |
+|---|---|
+| CodeBuild | Build·Test·Container Smoke·ECR Artifact 생성 |
+| GitHub Workflow | 운영 승격 Release control-plane |
+| Business Execution | Release Pipeline에서 미실행 |
+| ecs:RunTask | 사용 없음 |
+| states:StartExecution | 사용 없음 |
+| ssm:SendCommand | 사용 없음 |
+| DB Write | 없음 |
+| Broker·KIS 주문 | 없음 |
+
+### 운영 Promotion 자동화
+
+| 항목 | 내용 |
+|---|---|
+| 스크립트 | `.devops/scripts/deploy-execution.sh` 추가 |
+| 기준선 탐색 | 운영 State Machine Definition에서 Execution Task Definition 기준선 동적 확인 |
+| 신규 Revision | 운영 설정 복제 후 검증된 ECR Image Digest만 교체해 등록 |
+| 참조 전환 | 관련 State Machine의 Execution 참조 자동 변경 |
+| Activation Scope | State Machine 12개 / Execution State 28건 |
+| 안전 경계 | Definition Backup·Stale Promotion Guard·After-check·실패 시 자동 Rollback |
+| 실행 경계 | Release 과정에서 State Machine 자체 실행 없음 |
+
+### 최종 실제 검증
+
+| 항목 | 결과 |
+|---|---|
+| GitHub Actions Workflow | 성공 |
+| CodeBuild | 성공 |
+| ECR Artifact | 생성 성공 |
+| 신규 Task Definition | 등록 성공 |
+| Activation Scope Promotion | 12개 State Machine / 28건 자동 승격 성공 |
+| 신규 운영 Revision | 자동 승격 검증 완료 |
+| Artifact 정합성 | Source SHA·ECR Digest·활성 Task Definition Digest 일치 확인 |
+| pytest | 22건 성공 |
+| Business Execution | 없음 |
+
+### PORT_ACCOUNT_NO CI 계약 보완
+
+| 항목 | 내용 |
+|---|---|
+| 필수 여부 | `execution_config.py`에서 `PORT_ACCOUNT_NO` 필수, 미설정 시 fail-fast |
+| Runtime | AWS Runtime에서는 Secret 기반 주입 |
+| pytest | CodeBuild pytest에 test placeholder 사용 |
+| Container Smoke | 계좌 환경변수 계약을 placeholder로 검증 |
+
+### 변경 파일
+
+| 항목 | 값 |
+|---|---|
+| 문서 | `README.md`, `AGENTS.md`, `CHANGELOG.md`, `docs/source-file-catalog.md` |
+
+이번 Kiro 작업은 문서 현행화만 수행했다.
+CI·Release·Promotion 검증은 당일 수행된 결과를 문서화 근거로만 사용했다.
+실제 SHA, Digest, ARN, Workflow Run ID, Account ID, Secret과 계좌번호는 기록하지 않는다.
+DevOps Architecture, IAM 상세 정책과 공통 Release 전략은 `port-devops`에서 관리한다.
+
 ## 2026-08-07
 
 ### MARKET BUY 현금 보호

@@ -186,15 +186,38 @@ Connector Account · Balance · Position
 
 | 파일 | 책임 |
 |---|---|
-| `.github/workflows/execution-codebuild.yml` | OIDC로 CodeBuild 시작·대기, Build·ECR Push, 주문 미실행 |
-| `.devops/codebuild/buildspec.yml` | Compile·Test·Ruff·Docker Build·Smoke, Build-only, 선택적 ECR Push |
-| `.devops/scripts/container-smoke.py` | Runtime 파일·Import 계약과 금지 경로 검증 |
+| `.github/workflows/execution-codebuild.yml` | main Push·`workflow_dispatch` Trigger, OIDC CodeBuild 시작·대기, main Push 시 Release control-plane 호출 |
+| `.devops/codebuild/buildspec.yml` | Compile·pytest·Ruff·Docker Build·Container Source Compile·Container Import/File Smoke, Build-only 계약, 선택적 ECR Push |
+| `.devops/scripts/container-smoke.py` | Runtime 파일·Import 계약, 금지 경로와 계좌 placeholder 환경변수 검증 |
+| `.devops/scripts/deploy-execution.sh` | Release control-plane Promotion Script |
 | `.dockerignore` | Token·`.devops`·`tests`·`docs`를 Image에서 제외 |
 | `.gitignore` | `access_token.txt`와 로컬 산출물 Git 제외 |
 | `pytest.ini` | `tests` 대상 테스트 설정 |
 | `tests/` | 취소·다중 후보 순차 현금 배분·MARKET BUY 110% Reserve·체인·Container 계약 테스트 |
 
-CI는 Build·Test·ECR·Token 제외 책임만 가지며 ECS·Step Functions·주문을 실행하지 않는다.
+책임 분리는 아래와 같다.
+
+- CodeBuild는 Build·Test·Container Smoke·ECR Artifact 생성 책임만 가지며 ECS·Step Functions 운영을 변경하지 않는다.
+- GitHub Workflow Release control-plane은 검증된 Artifact로 ECS Task Definition 등록과 State Machine Definition 참조 변경을 수행할 수 있다.
+- Release control-plane은 State Machine execution과 `ecs:RunTask`를 수행하지 않는다.
+- Release control-plane은 Business 주문과 DB Write를 수행하지 않는다.
+
+### `.devops/scripts/deploy-execution.sh`
+
+| 항목 | 값 |
+|---|---|
+| 책임 | main Push 후속 운영 Promotion을 수행하는 Release control-plane Script |
+| 기준선 탐색 | 운영 State Machine Definition에서 Execution Task Definition 기준선 동적 확인 |
+| Artifact resolve | Source SHA 기준 ECR Image Digest 확인 |
+| 신규 Revision | 운영 Task Definition Clone 후 검증된 Image Digest만 교체해 등록 |
+| Backup | 변경 전 State Machine Definition Backup |
+| Activation Scope | 대상 State Machine과 Execution State 참조 검증 |
+| Promotion | 관련 State Machine의 Execution 참조 전환 |
+| Stale Guard | 기준선 변경 시 Promotion 차단 |
+| Rollback | 실패 시 Backup Definition으로 자동 복구 |
+| After-check | Promotion 후 참조 정합성 검증 |
+| 실행 경계 | State Machine execution·`ecs:RunTask`·주문·DB Write 없음 |
+| 민감정보 | ARN·Resource ID·Revision 번호는 문서에 기록하지 않음 |
 
 ### `requirements.txt`
 
@@ -714,9 +737,11 @@ Container Command Override 대상으로 사용될 수 있다.
 <COMMAND_ID>
 ```
 
-State Machine Definition은 이 Repository의 Source 파일이 아니다.
-Catalog는 이를 파일 항목으로 만들지 않고, DevOps 외부 영향과 운영 참조로만 설명한다.
-Execution 관련 State의 Task Definition 참조 변경과 Rollback Definition은 외부 운영 승인으로 관리한다.
+State Machine Definition 자체는 이 Repository의 Source 파일이 아니다.
+Catalog는 이를 파일 항목으로 만들지 않고 운영 참조로만 설명한다.
+현재 Execution 관련 State의 Task Definition 참조 변경과 Rollback은
+`.devops/scripts/deploy-execution.sh` Release control-plane이 main Push에서 자동 수행한다.
+이 자동 Promotion은 Definition 참조만 변경하며 State Machine 실행·주문·DB Write를 수행하지 않는다.
 
 ## 22. 민감정보 후보
 

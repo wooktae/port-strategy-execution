@@ -19,9 +19,10 @@
 | 실행 형태 | 루트 실행형 Python entrypoint 중심 |
 | 주문 API | MarketConnector helper 경유 |
 | 기본 정책 | 후보 생성과 승인 경계를 분리하고 중복 주문을 방지 |
-| CI · Artifact | GitHub Actions·CodeBuild·ECR 기반 Container CI, Build-only |
-| Image 기준 | Git SHA 기반 Docker Image |
-| 검증 방식 | Candidate Task Definition 검증 후 State Machine Revision 승격·Rollback |
+| CI · Release | main Push 기반 Build/Test/ECR과 Automatic no-order Release |
+| Artifact Identity | Git SHA Tag와 ECR Image Digest |
+| 승격 방식 | 검증된 Digest와 현재 운영 Runtime 설정으로 신규 Task Definition 구성 후 State Machine 참조 자동 Promotion |
+| 실행 경계 | Business Execution과 Release Definition 변경을 분리 |
 | 문서 기준 | 현재 코드·파일 구조의 정적 확인 결과 |
 
 ## 2. 주요 책임
@@ -547,7 +548,8 @@ Backtest 후보는 Daily 운영 Signal과 같은 입력으로 표현하지 않�
 │   ├── codebuild/
 │   │   └── buildspec.yml
 │   └── scripts/
-│       └── container-smoke.py
+│       ├── container-smoke.py
+│       └── deploy-execution.sh
 ├── .dockerignore
 ├── .gitignore
 ├── AGENTS.md
@@ -754,13 +756,17 @@ Execution 작업 요청만으로 MarketConnector 파일을 수정하지 않는�
 
 | 환경변수 | 의미 |
 |---|---|
-| `PORT_ACCOUNT_NO` | 계좌 식별 |
+| `PORT_ACCOUNT_NO` | 계좌 식별, 필수, 코드 Fallback 없음 |
 | `PORT_BROKER_NAME` | Broker 구분 |
 | `PORT_ENVIRONMENT` | 실행 환경 |
 | `PORT_STRATEGY_NAME` | Strategy Name |
 | `PORT_STRATEGY_VERSION` | Strategy Version |
 | `PORT_MAX_ORDER_AMOUNT_RATIO` | 최대 주문 금액 비율 |
 | `PORT_MIN_ORDER_AMOUNT` | 최소 주문 금액 |
+
+`execution_config.py`는 `PORT_ACCOUNT_NO`를 필수로 요구하며 미설정 시 fail-fast로 중단한다.
+AWS Runtime에서는 실제 계좌번호를 Secret 기반으로 주입한다.
+CI Harness(pytest CodeBuild, Container Smoke)에서는 실제 계좌번호가 아닌 test placeholder를 사용한다.
 
 실제 비밀번호, Token, 계좌번호, Webhook과 운영 식별자는 문서에 기록하지 않는다.
 
@@ -819,19 +825,29 @@ README에 원문으로 기록하지 않는다.
 `python daily_auto_buy_execute_run.py`다.
 기본 CMD는 `--execute` 없이 동작하며, CI는 이 CMD 계약을 실행 없이 확인만 한다.
 
-### 21.1 CI와 Candidate·운영 참조
+### 21.1 CI와 Automatic Release
+
+현재 Execution은 main Push 기반 Automatic no-order Release로 구성된다.
+CodeBuild는 Build·Test·Container Smoke·ECR Artifact 생성까지 담당하고,
+GitHub Workflow Release control-plane이 후속 운영 Promotion을 수행한다.
 
 | 항목 | 기준 |
 |---|---|
-| CI | GitHub Actions → OIDC → CodeBuild → ECR 경로, Build-only |
-| CI 범위 | Compile·Unit Test·Ruff·Docker Build·Container Smoke |
-| CI 제외 | ECS·Step Functions·주문 Entry Point 실행 안 함 |
-| Candidate | 운영 Task Definition을 복제한 Standalone ECS Task로 검증 |
-| 운영 참조 변경 | State Machine의 Execution Task Definition 참조는 수동 승인 기반 |
-| Rollback | 백업 Definition으로 이전 Task Definition 참조 복구 |
-| 구분 | 실제 Daily Workflow 실행과 Revision 승격을 별도로 취급 |
+| Trigger | main Push 자동 실행과 `workflow_dispatch` Build-only 경로 |
+| CI 인증 | GitHub Actions → OIDC → Execution 전용 CodeBuild |
+| CodeBuild 범위 | Compile·pytest·Ruff·Docker Build·Container Source Compile·Container Import/File Smoke |
+| Artifact | 검증 성공 시 Git SHA 기반 ECR Image Publish |
+| Release control-plane | 검증된 Digest와 현재 운영 Runtime 설정으로 신규 Task Definition 등록 후 State Machine 참조 자동 Promotion |
+| 승인 단계 | 수동 Approve 단계 없음 |
+| 안전 경계 | Definition Backup, Stale Promotion Guard, Promotion After-check, 실패 시 자동 Rollback |
+| Business Execution | Release Pipeline에서 주문·DB Write·ECS RunTask·Step Functions 실행 없음 |
 
-CI Build 성공을 운영 배포 성공이나 주문 실행으로 해석하지 않는다.
+Release control-plane의 State Machine Definition 참조 변경과 State Machine 실행은 서로 다른 작업이다.
+Release는 Definition만 변경하며 State Machine 자체를 실행하지 않는다.
+CI·Release Build 성공을 실제 Daily 주문 실행 성공으로 해석하지 않는다.
+
+DevOps Architecture, IAM 상세 정책, 전체 Promotion/Rollback 설계와 공통 Release 전략은
+`port-devops` Repository에서 별도로 관리한다.
 
 ## 22. 실행 안전
 
@@ -907,14 +923,16 @@ git diff --stat
 
 | 항목 | 확정 내용 |
 |---|---|
-| Docker Image | Git SHA 기반 Image와 Candidate Task Definition 검증 방식 |
+| Release 방식 | main Push 기반 Automatic no-order Release |
+| Artifact Identity | Git SHA Tag와 ECR Image Digest |
 | Docker CMD | 기본 CMD는 `python daily_auto_buy_execute_run.py` (실행 없이 확인) |
 | MARKET BUY Reserve | 시장가 수량·필요 현금에 110% Reserve 적용 |
 | 누적 현금 배분 | READY 후보의 Reserve 포함 필요 현금을 순차 차감 |
 | Step 15 CANCELED | 정상 취소를 실패가 아닌 별도 Terminal로 처리 |
 | BUY Position 생성 조건 | FILLED BUY만 대상, CANCELED BUY는 제외 |
-| 운영 State Machine 참조 | Execution 관련 5개 State가 새 Revision 참조 |
-| Rollback 방식 | 백업 Definition으로 이전 Revision 참조 복구 |
+| 운영 Promotion | Release control-plane이 신규 Task Definition 등록과 State Machine 참조 자동 전환 |
+| Activation Scope | State Machine 12개 / Execution State 28건 |
+| Rollback 방식 | 백업 Definition으로 이전 참조 복구, 실패 시 자동 Rollback |
 
 ### 25.2 아직 확인이 필요한 항목
 
