@@ -84,7 +84,7 @@ phases:
       - echo "PYTHON_COMPILE=SUCCESS"
 
       - echo "=== UNIT AND CONTRACT TEST ==="
-      - INTEREST_DB_PASSWORD=codebuild-test-placeholder python -m pytest -q
+      - PORT_ACCOUNT_NO=codebuild-test-placeholder INTEREST_DB_PASSWORD=codebuild-test-placeholder python -m pytest -q
       - echo "PYTEST=SUCCESS"
 
       - echo "=== STATIC ANALYSIS ==="
