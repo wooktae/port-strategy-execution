@@ -128,7 +128,7 @@ phases:
 
       - echo "=== CONTAINER IMPORT AND FILE SMOKE ==="
       - |
-        docker run           --rm           --workdir /app           --env PYTHONPATH=/app           --env INTEREST_DB_PASSWORD=container-smoke-placeholder           --entrypoint python           --volume "${CODEBUILD_SRC_DIR}/.devops/scripts/container-smoke.py:/tmp/container-smoke.py:ro"           "${IMAGE_URI}"           /tmp/container-smoke.py
+        docker run           --rm           --workdir /app           --env PYTHONPATH=/app           --env PORT_ACCOUNT_NO=container-smoke-placeholder           --env INTEREST_DB_PASSWORD=container-smoke-placeholder           --entrypoint python           --volume "${CODEBUILD_SRC_DIR}/.devops/scripts/container-smoke.py:/tmp/container-smoke.py:ro"           "${IMAGE_URI}"           /tmp/container-smoke.py
 
       - echo "=== VERIFY DEFAULT CMD WITHOUT EXECUTION ==="
       - |
