@@ -22,6 +22,7 @@ from execution_repository import (
     mark_plan_no_candidate,
 )
 from execution_daily_signal_builder import build_daily_signal_execution_orders
+from execution_locale import t
 
 
 def print_header(title):
@@ -86,8 +87,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -154,7 +155,7 @@ def main():
 
         if not order_data_list:
             print()
-            print("[WARN] 생성할 Daily Signal execution order 후보가 없음")
+            print(t("[WARN] No Daily Signal execution order candidate to create", "[WARN] 생성할 Daily Signal execution order 후보가 없음"))
 
         # -------------------------------------------------
         # 6. Store Execution Orders in the DB
@@ -214,10 +215,10 @@ def main():
             print(f"skipped_orders   : {summary['skipped_order_count']}")
             print(f"target_amount    : {summary['total_target_amount']}")
         else:
-            print("[WARN] plan summary 없음")
+            print(t("[WARN] No plan summary", "[WARN] plan summary 없음"))
 
         print_header("[DONE]")
-        print("Daily Signal execution candidate build 완료")
+        print(t("Daily Signal execution candidate build complete", "Daily Signal execution candidate build 완료"))
 
     except Exception as e:
         conn.rollback()

@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
 from execution_repository import dumps_json
+from execution_locale import t
 
 
 def to_decimal(value, default="0"):
@@ -820,7 +821,7 @@ def main():
     except Exception as e:
         conn.rollback()
         print()
-        print("[ERROR] Execution BUY position sync 실패")
+        print(t("[ERROR] Execution BUY position sync failed", "[ERROR] Execution BUY position sync 실패"))
         print(e)
         raise
 

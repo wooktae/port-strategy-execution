@@ -24,6 +24,7 @@ from execution_repository import (
     mark_plan_no_candidate,
 )
 from execution_builder import build_execution_orders
+from execution_locale import t
 
 
 def print_header(title):
@@ -143,8 +144,8 @@ def main():
 
         if not order_data_list:
             print()
-            print("[WARN] 생성할 backtest execution order 후보가 없음")
-            print("       plan_date 기준 buy_date/sell_date 후보가 없는 상태일 수 있음")
+            print(t("[WARN] No backtest execution order candidate to create", "[WARN] 생성할 backtest execution order 후보가 없음"))
+            print(t("       There may be no buy_date/sell_date candidate for the given plan_date", "       plan_date 기준 buy_date/sell_date 후보가 없는 상태일 수 있음"))
 
         # -------------------------------------------------
         # 8. Store Execution Orders in the DB
@@ -182,10 +183,10 @@ def main():
             print(f"skipped_orders   : {summary['skipped_order_count']}")
             print(f"target_amount    : {summary['total_target_amount']}")
         else:
-            print("[WARN] plan summary 없음")
+            print(t("[WARN] No plan summary", "[WARN] plan summary 없음"))
 
         print_header("[DONE]")
-        print("Backtest execution candidate build 완료")
+        print(t("Backtest execution candidate build complete", "Backtest execution candidate build 완료"))
 
     except Exception as e:
         conn.rollback()

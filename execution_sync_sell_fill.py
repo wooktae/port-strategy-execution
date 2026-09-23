@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
 from execution_repository import dumps_json
+from execution_locale import t
 
 
 SYNC_SOURCE = "execution_sync_sell_fill"
@@ -491,7 +492,7 @@ def main():
     except Exception as e:
         conn.rollback()
         print()
-        print("[ERROR] Execution SELL fill sync 실패")
+        print(t("[ERROR] Execution SELL fill sync failed", "[ERROR] Execution SELL fill sync 실패"))
         print(e)
         raise
 

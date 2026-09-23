@@ -16,6 +16,7 @@ from execution_repository import (
     mark_execution_order_execution_mode,
     mark_execution_order_requested,
 )
+from execution_locale import t
 
 
 EXECUTION_MODE_PAPER_STRATEGY = "PAPER_STRATEGY"
@@ -81,8 +82,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -391,7 +392,7 @@ def main():
 
         if not orders:
             print()
-            print("[WARN] 자동매도 대상 READY SELL 주문이 없음")
+            print(t("[WARN] No READY SELL order for auto-sell", "[WARN] 자동매도 대상 READY SELL 주문이 없음"))
             conn.rollback()
             return
 
@@ -415,25 +416,25 @@ def main():
         print(f"executable_count : {len(executable_orders)}")
 
         if not executable_orders:
-            print("[WARN] 실행 가능한 자동매도 주문이 없음")
+            print(t("[WARN] No executable auto-sell order", "[WARN] 실행 가능한 자동매도 주문이 없음"))
             conn.rollback()
             return
 
         if not args.execute:
             print()
-            print("조회/검증만 완료. REQUESTED 전환은 --execute 필요.")
+            print(t("Query/validation only complete. --execute is required for the REQUESTED transition.", "조회/검증만 완료. REQUESTED 전환은 --execute 필요."))
             conn.rollback()
             return
 
         print_header("[Auto SELL Execute]")
-        print("자동매도는 PAPER_STRATEGY 모드만 허용됨.")
-        print("전략 order_qty 그대로 MarketConnector SELL 실행 요청 등록.")
+        print(t("Auto-sell is allowed only in PAPER_STRATEGY mode.", "자동매도는 PAPER_STRATEGY 모드만 허용됨."))
+        print(t("Registering the MarketConnector SELL execution request with the strategy order_qty as-is.", "전략 order_qty 그대로 MarketConnector SELL 실행 요청 등록."))
 
         for order in executable_orders:
             execute_one_auto_sell(conn, order)
 
         print_header("[DONE]")
-        print("Daily Position 자동매도 REQUESTED 전환 완료")
+        print(t("Daily Position auto-sell REQUESTED transition complete", "Daily Position 자동매도 REQUESTED 전환 완료"))
 
     except Exception as e:
         conn.rollback()

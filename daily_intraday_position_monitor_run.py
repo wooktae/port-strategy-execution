@@ -19,6 +19,7 @@ from execution_repository import (
     upsert_intraday_stop_sell_execution_order,
     insert_intraday_position_check,
 )
+from execution_locale import t
 # -------------------------------------------------
 # Market Connector import path
 # -------------------------------------------------
@@ -35,7 +36,7 @@ except ModuleNotFoundError as e:
     print("[IMPORT ERROR]")
     print(f"CONNECTOR_PATH = {CONNECTOR_PATH}")
     print(f"sys.path[0]    = {sys.path[0]}")
-    print("connector_quote_realtime.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요")
+    print(t("Check that connector_quote_realtime.py exists under C:\\Workspaces\\port-marketconnector", "connector_quote_realtime.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요"))
     raise e
 
 
@@ -540,7 +541,7 @@ def main():
 
         if not positions:
             print()
-            print("[WARN] 장중 모니터링 대상 OPEN 포지션 없음")
+            print(t("[WARN] No OPEN position to monitor intraday", "[WARN] 장중 모니터링 대상 OPEN 포지션 없음"))
             conn.rollback()
             return
 
@@ -590,12 +591,12 @@ def main():
 
         if not stop_candidates:
             print()
-            print("[NO_TARGET] 장중 손절 조건 충족 포지션 없음")
+            print(t("[NO_TARGET] No position meeting the intraday stop-loss condition", "[NO_TARGET] 장중 손절 조건 충족 포지션 없음"))
             conn.commit()
             return
 
         print()
-        print("[ALERT] 장중 손절 후보 발생")
+        print(t("[ALERT] Intraday stop-loss candidate detected", "[ALERT] 장중 손절 후보 발생"))
         for candidate in stop_candidates:
             print(
                 f"- position_state_id={candidate['position_state_id']} "
@@ -607,8 +608,8 @@ def main():
 
         if not args.create_order:
             print()
-            print("조회/검증만 완료. INTRADAY_STOP_SELL READY 주문 생성은 --create-order 필요.")
-            print("점검 결과는 position loop에서 이미 저장됨.")
+            print(t("Query/validation only complete. --create-order is required to create the INTRADAY_STOP_SELL READY order.", "조회/검증만 완료. INTRADAY_STOP_SELL READY 주문 생성은 --create-order 필요."))
+            print(t("Check results were already stored in the position loop.", "점검 결과는 position loop에서 이미 저장됨."))
 
             conn.commit()
             return

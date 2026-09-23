@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
 from execution_repository import dumps_json
+from execution_locale import t
 
 CANCELED_REQUEST_STATUSES = {
     "CANCELED",
@@ -470,7 +471,7 @@ def main():
     except Exception as e:
         conn.rollback()
         print()
-        print("[ERROR] Execution BUY fill sync 실패")
+        print(t("[ERROR] Execution BUY fill sync failed", "[ERROR] Execution BUY fill sync 실패"))
         print(e)
         raise
 

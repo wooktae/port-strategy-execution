@@ -24,6 +24,7 @@ from execution_repository import (
     update_plan_summary,
 )
 from execution_daily_position_sell_builder import build_daily_position_sell_execution_orders
+from execution_locale import t
 
 
 def print_header(title):
@@ -88,8 +89,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -198,8 +199,8 @@ def main():
 
         if not order_data_list:
             print()
-            print("[INFO] 생성할 Daily Position SELL execution order 후보가 없음")
-            print("       SELL decision이 없거나, 전략 포지션 OPEN 대상이 없는 상태일 수 있음")
+            print(t("[INFO] No Daily Position SELL execution order candidate to create", "[INFO] 생성할 Daily Position SELL execution order 후보가 없음"))
+            print(t("       There may be no SELL decision, or no OPEN strategy position target", "       SELL decision이 없거나, 전략 포지션 OPEN 대상이 없는 상태일 수 있음"))
 
         # -------------------------------------------------
         # 6. Store Execution Orders + update the Daily Position Decision link
@@ -248,10 +249,10 @@ def main():
             print(f"skipped_orders   : {summary['skipped_order_count']}")
             print(f"target_amount    : {summary['total_target_amount']}")
         else:
-            print("[WARN] plan summary 없음")
+            print(t("[WARN] No plan summary", "[WARN] plan summary 없음"))
 
         print_header("[DONE]")
-        print("Daily Position SELL execution build 완료")
+        print(t("Daily Position SELL execution build complete", "Daily Position SELL execution build 완료"))
 
     except Exception as e:
         conn.rollback()

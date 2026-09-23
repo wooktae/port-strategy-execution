@@ -17,6 +17,7 @@ from execution_repository import (
     mark_execution_order_execute_failed,
     mark_position_sell_ordered,
 )
+from execution_locale import t
 
 # -------------------------------------------------
 # Market Connector import path
@@ -35,7 +36,7 @@ except ModuleNotFoundError as e:
     print("[IMPORT ERROR]")
     print(f"CONNECTOR_PATH = {CONNECTOR_PATH}")
     print(f"sys.path[0]    = {sys.path[0]}")
-    print("connector_buy.py / connector_sell.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요")
+    print(t("Check that connector_buy.py / connector_sell.py exist under C:\\Workspaces\\port-marketconnector", "connector_buy.py / connector_sell.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요"))
     raise e
 
 
@@ -467,13 +468,13 @@ def main():
         # -------------------------------------------------
         if not args.execute:
             print()
-            print("검증 및 execution_mode 설정 완료. 실제 주문 실행은 --execute 필요.")
+            print(t("Validation and execution_mode setup complete. Actual order execution requires --execute.", "검증 및 execution_mode 설정 완료. 실제 주문 실행은 --execute 필요."))
             print()
             print("[Mode Summary]")
-            print("- DRY_RUN        : Connector 주문 없음")
-            print("- MANUAL_TEST    : paper 1주 제한 주문")
-            print("- PAPER_STRATEGY : paper 전략 수량 주문")
-            print("- LIVE_STRATEGY  : live 전략 수량 주문, --confirm-live 필요")
+            print(t("- DRY_RUN        : No Connector order", "- DRY_RUN        : Connector 주문 없음"))
+            print(t("- MANUAL_TEST    : paper 1-share limited order", "- MANUAL_TEST    : paper 1주 제한 주문"))
+            print(t("- PAPER_STRATEGY : paper strategy-quantity order", "- PAPER_STRATEGY : paper 전략 수량 주문"))
+            print(t("- LIVE_STRATEGY  : live strategy-quantity order, --confirm-live required", "- LIVE_STRATEGY  : live 전략 수량 주문, --confirm-live 필요"))
             return
 
         # -------------------------------------------------

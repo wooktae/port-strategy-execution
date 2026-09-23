@@ -25,6 +25,7 @@ from execution_repository import (
 )
 from execution_position_loader import load_position_contexts
 from execution_sell_evaluator import evaluate_position_sell
+from execution_locale import t
 
 
 DEFAULT_EXECUTION_MODE = "REVIEW"
@@ -421,7 +422,7 @@ def main():
     except Exception as e:
         conn.rollback()
         print()
-        print("[ERROR] Position SELL builder 실패")
+        print(t("[ERROR] Position SELL builder failed", "[ERROR] Position SELL builder 실패"))
         print(e)
         raise
 
