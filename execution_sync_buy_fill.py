@@ -1,7 +1,7 @@
 """
-connector BUY 체결 내역을 strategy_execution_order 상태에 동기화하는 entrypoint.
-connector_order_request와 connector_fill을 조회하고 BUY order를 FILLED로 갱신할 수 있다.
-체결 조회 및 DB update 경로이므로 명시 승인 없이 실행하지 않는다.
+Entrypoint that synchronizes connector BUY fill records into the strategy_execution_order status.
+It can query connector_order_request and connector_fill and update BUY orders to FILLED.
+Because this is a fill-query and DB-update path, do not run it without explicit approval.
 """
 
 from decimal import Decimal
@@ -40,15 +40,15 @@ def to_int(value, default=0):
 
 def get_submitted_buy_orders(conn):
     """
-    아직 Strategy 쪽에서 FILLED 처리되지 않은 BUY 주문 조회.
+    Query BUY orders not yet marked FILLED on the Strategy side.
 
-    대상:
+    Targets:
     - action_type = BUY
     - execution_status = SUBMITTED
     - connector_order_request_id IS NOT NULL
 
-    source_type은 TRADE_LOG_BUY 중심이지만,
-    향후 다른 BUY source_type이 생겨도 action_type 기준으로 동기화 가능하게 둔다.
+    source_type is centered on TRADE_LOG_BUY, but
+    it is kept syncable by action_type even if other BUY source_types are added in the future.
     """
 
     sql = """
@@ -170,8 +170,8 @@ def summarize_fills(fills):
 
 def mark_execution_order_filled(conn, execution_order, order_request, fill_summary):
     """
-    strategy_execution_order를 FILLED로 마감.
-    기존 result_payload에 sync_result를 추가한다.
+    Close the strategy_execution_order as FILLED.
+    Adds sync_result to the existing result_payload.
     """
 
     result_payload = execution_order.get("result_payload") or {}
@@ -213,10 +213,10 @@ def mark_execution_order_filled(conn, execution_order, order_request, fill_summa
 
 def mark_execution_order_canceled(conn, execution_order, order_request):
     """
-    Broker에서 정상 취소된 BUY 주문을 CANCELED로 마감한다.
+    Close a BUY order that was normally canceled at the Broker as CANCELED.
 
-    정상 취소는 체결과 Position이 없는 terminal 상태다.
-    기존 result_payload에 sync_result를 추가해 취소 근거를 보존한다.
+    A normal cancellation is a terminal state with no fill and no Position.
+    Adds sync_result to the existing result_payload to preserve the cancellation basis.
     """
 
     result_payload = execution_order.get("result_payload") or {}
@@ -262,8 +262,8 @@ def mark_execution_order_canceled(conn, execution_order, order_request):
 
 def sync_one_order(conn, execution_order):
     """
-    SUBMITTED BUY execution order 1건의 connector 체결을 요약해 FILLED 상태로 반영한다.
-    connector fill 조회 결과가 후속 position sync의 기준이 된다.
+    Summarize the connector fills of a single SUBMITTED BUY execution order and reflect it as FILLED.
+    The connector fill query result becomes the basis for subsequent position sync.
     """
     order_request_id = execution_order.get("connector_order_request_id")
 

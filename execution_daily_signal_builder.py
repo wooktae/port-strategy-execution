@@ -1,9 +1,9 @@
 # C:\Workspaces\port_strategy_execution\execution_daily_signal_builder.py
 
 """
-Daily BUY signal을 strategy_execution_order 저장 데이터로 변환하는 builder.
-계좌/잔고, 기존 포지션, 최신가, 미체결 주문을 조회해 BUY 주문 후보와 검증 payload를 만든다.
-수량 산정은 execution_buy_sizing 정책을 사용한다.
+Builder that converts a Daily BUY signal into strategy_execution_order storage data.
+It queries the account/balance, existing position, latest price, and open orders to build BUY order candidates and a validation payload.
+Quantity sizing uses the execution_buy_sizing policy.
 """
 
 from decimal import Decimal
@@ -69,11 +69,11 @@ def get_balance_value(balance, key, default="0"):
 
 def calculate_max_order_amount(total_eval_amount):
     """
-    종목별 최대 주문금액 계산.
+    Compute the maximum order amount per stock.
 
-    현재 정책:
-    - 총 평가금액의 50%를 단일 주문 상한으로 사용
-    - 추후 execution_config.DEFAULT_MAX_ORDER_AMOUNT_RATIO로 이전 가능
+    Current policy:
+    - Use 50% of the total evaluation amount as the single-order cap
+    - Can later be migrated to execution_config.DEFAULT_MAX_ORDER_AMOUNT_RATIO
     """
 
     total_eval_amount = to_decimal(total_eval_amount, "0")
@@ -125,12 +125,12 @@ def build_daily_signal_buy_execution_order(
     initial_available_cash=None,
 ):
     """
-    strategy_daily_signal row를 BUY execution candidate로 변환.
+    Convert a strategy_daily_signal row into a BUY execution candidate.
 
-    핵심:
-    - BUY 판단 / position_size는 Daily Signal에서 이미 결정됨
-    - 여기서는 실제 계좌 기준 주문 수량으로 변환
-    - 수량 계산은 execution_buy_sizing.calculate_buy_order_sizing()에 위임
+    Key points:
+    - The BUY judgment / position_size is already decided in the Daily Signal
+    - Here it is converted into an order quantity based on the actual account
+    - Quantity calculation is delegated to execution_buy_sizing.calculate_buy_order_sizing()
     """
 
     account_id = account["id"]
@@ -199,7 +199,7 @@ def build_daily_signal_buy_execution_order(
     }
 
     # -------------------------------------------------
-    # 1. 공통 실행 후보 검증
+    # 1. Common execution-candidate validation
     # -------------------------------------------------
     validation_reasons = build_daily_signal_validation(
         ticker_code=ticker_code,
@@ -214,7 +214,7 @@ def build_daily_signal_buy_execution_order(
         validation_reasons.append("BUY but position_size <= 0")
 
     # -------------------------------------------------
-    # 2. BUY 주문 수량 계산
+    # 2. Compute the BUY order quantity
     # -------------------------------------------------
     sizing_result = calculate_buy_order_sizing(
         available_cash=available_cash,
@@ -247,7 +247,7 @@ def build_daily_signal_buy_execution_order(
     sizing_detail = sizing_result["sizing_detail"]
 
     # -------------------------------------------------
-    # 3. Execution 상태 결정
+    # 3. Determine the Execution status
     # -------------------------------------------------
     if validation_reasons:
         execution_status = "BLOCKED"
@@ -257,7 +257,7 @@ def build_daily_signal_buy_execution_order(
         block_reason = None
 
     # -------------------------------------------------
-    # 4. validation_result 저장
+    # 4. Store validation_result
     # -------------------------------------------------
     reserved_amount = (
         min(required_cash_amount, available_cash)
@@ -292,7 +292,7 @@ def build_daily_signal_buy_execution_order(
             ),
         },
 
-        # 신규 구조: View / 운영 화면에서 구조적으로 표시하기 좋게 분리
+        # New structure: separated for cleaner structural display on the View / operational screen
         "sizing": {
             "method": sizing_detail.get("sizing_method"),
             "detail": sizing_detail,
@@ -344,7 +344,7 @@ def build_daily_signal_buy_execution_order(
             "rank_no": signal.get("rank_no"),
         },
 
-        # 기존 호환 / SQL 조회 편의용 flat fields
+        # Flat fields for backward compatibility / SQL query convenience
         "available_cash": str(available_cash),
         "total_eval_amount": str(total_eval_amount),
         "max_order_amount": str(max_order_amount) if max_order_amount is not None else None,
@@ -415,8 +415,8 @@ def build_daily_signal_buy_execution_order(
         "order_price": order_price,
         "order_method": "MARKET",
 
-        # 여러 BUY 후보의 순차 현금 예약 계산용 내부 값.
-        # Repository 저장 컬럼은 아니며 호출자가 다음 후보 잔액을 계산한다.
+        # Internal values for sequential cash reservation across multiple BUY candidates.
+        # These are not Repository storage columns; the caller computes the next candidate's balance.
         "estimated_order_amount": estimated_order_amount,
         "required_cash_amount": required_cash_amount,
 
@@ -437,13 +437,13 @@ def build_daily_signal_execution_orders(
     signals,
 ):
     """
-    Daily BUY 후보를 입력 순서대로 생성하며 READY 주문 금액을 순차 예약한다.
+    Generate Daily BUY candidates in input order, sequentially reserving READY order amounts.
 
-    정책:
-    - 최초 orderable_cash를 전체 후보의 공통 예산으로 사용
-    - READY 주문의 required_cash_amount(예상 주문금액 110%)를 다음 후보 예산에서 차감
-    - BLOCKED 주문은 현금을 예약하지 않음
-    - 잔여 현금은 0 미만으로 내려가지 않음
+    Policy:
+    - Use the initial orderable_cash as the common budget for all candidates
+    - Deduct the READY order's required_cash_amount (110% of the estimated order amount) from the next candidate's budget
+    - BLOCKED orders do not reserve cash
+    - The remaining cash never goes below 0
     """
 
     order_data_list = []

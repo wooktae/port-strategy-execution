@@ -1,7 +1,7 @@
 """
-FILLED BUY execution order를 strategy_position_state OPEN 포지션으로 동기화한다.
-connector 주문/체결 정보를 조회해 포지션 row를 생성하고 execution order payload를 갱신한다.
-포지션 생성 DB write가 발생하므로 명시 승인 없이 실행하지 않는다.
+Synchronizes a FILLED BUY execution order into a strategy_position_state OPEN position.
+It queries connector order/fill information to create the position row and update the execution order payload.
+Because a position-creation DB write occurs, do not run it without explicit approval.
 """
 
 from decimal import Decimal
@@ -35,14 +35,14 @@ def to_int(value, default=0):
 
 def get_filled_buy_execution_orders_without_position(conn):
     """
-    FILLED 처리된 BUY execution_order 중
-    아직 strategy_position_state가 생성되지 않은 주문 조회.
+    Query FILLED BUY execution_orders
+    for which a strategy_position_state has not yet been created.
 
-    기준:
+    Criteria:
     - action_type = BUY
     - execution_status = FILLED
     - connector_order_request_id IS NOT NULL
-    - strategy_position_state.source_buy_execution_order_id 로 중복 방지
+    - Deduplication via strategy_position_state.source_buy_execution_order_id
     """
 
     sql = """
@@ -215,10 +215,10 @@ def build_buy_info(execution_order, order_request, fill_summary):
 
 def get_open_position_state(conn, account_id, ticker_code):
     """
-    동일 계좌/종목의 OPEN position_state를 row lock과 함께 조회한다.
+    Query the OPEN position_state for the same account/stock with a row lock.
 
-    추가매수 허용 정책에서는 기존 OPEN 포지션이 있으면 신규 INSERT가 아니라
-    기존 position_state에 fill을 병합해야 한다.
+    Under the add-buy allowance policy, if an existing OPEN position exists, the fill must be
+    merged into the existing position_state rather than a new INSERT.
     """
 
     sql = """
@@ -277,8 +277,8 @@ def same_id(left, right):
 
 def buy_info_has_execution_order(buy_info, execution_order_id, order_request_id=None):
     """
-    같은 execution_order / connector_order_request가 이미 position_state.buy_info에
-    반영되어 있는지 확인한다. Step 16 재실행 시 추가매수 중복 반영을 방지한다.
+    Check whether the same execution_order / connector_order_request is already
+    reflected in position_state.buy_info. Prevents duplicate add-buy reflection on Step 16 re-runs.
     """
 
     buy_info = normalize_buy_info(buy_info)
@@ -333,14 +333,14 @@ def build_additional_buy_info(execution_order, order_request, fill_summary):
 
 def merge_open_position_state(conn, existing_position, execution_order, order_request, fill_summary):
     """
-    추가매수 fill을 기존 OPEN position_state에 병합한다.
+    Merge an add-buy fill into the existing OPEN position_state.
 
-    - 최초 entry_date는 유지한다.
-    - entry_qty / remaining_qty는 추가매수 수량만큼 증가한다.
-    - entry_price는 기존 평균단가와 추가매수 금액을 가중평균해 재계산한다.
-    - buy_info.additional_buys에 추가매수 이력을 누적한다.
-    - 동일 execution_order_id 또는 connector_order_request_id가 이미 기록되어 있으면
-      수량/금액을 다시 더하지 않고 기존 row만 반환한다.
+    - The original entry_date is preserved.
+    - entry_qty / remaining_qty increase by the add-buy quantity.
+    - entry_price is recomputed as the weighted average of the existing average price and the add-buy amount.
+    - The add-buy history is accumulated in buy_info.additional_buys.
+    - If the same execution_order_id or connector_order_request_id is already recorded,
+      the quantity/amount is not added again and only the existing row is returned.
     """
 
     buy_info = normalize_buy_info(existing_position.get("buy_info"))
@@ -458,11 +458,11 @@ def sync_position_state_for_buy_order(conn, execution_order, order_request, fill
 
 def create_position_state(conn, execution_order, order_request, fill_summary):
     """
-    BUY fill 기준으로 strategy_position_state OPEN 생성.
+    Create a strategy_position_state OPEN based on the BUY fill.
 
-    중복 방지:
-    - source_buy_execution_order_id 기준 NOT EXISTS
-    - UNIQUE 제약이 없어도 논리적으로 중복 생성 방지
+    Deduplication:
+    - NOT EXISTS based on source_buy_execution_order_id
+    - Logically prevents duplicate creation even without a UNIQUE constraint
     """
 
     buy_info = build_buy_info(
@@ -560,7 +560,7 @@ def create_position_state(conn, execution_order, order_request, fill_summary):
 
 def append_position_sync_result(conn, execution_order, position_state):
     """
-    strategy_execution_order.result_payload에 position_sync_result를 추가.
+    Add position_sync_result to strategy_execution_order.result_payload.
     """
 
     result_payload = execution_order.get("result_payload") or {}
@@ -600,11 +600,11 @@ def append_position_sync_result(conn, execution_order, position_state):
 
 def sync_one_order(conn, execution_order):
     """
-    FILLED BUY execution order 1건을 OPEN position_state에 반영한다.
+    Reflect a single FILLED BUY execution order into an OPEN position_state.
 
-    기존 OPEN 포지션이 있으면 추가매수 병합을 허용하고,
-    동일 execution_order가 이미 buy_info에 반영된 멱등 재실행도 정상으로 본다.
-    그 외 Request / Fill / Position / execution payload 불일치는 ERROR로 반환한다.
+    If an existing OPEN position exists, add-buy merging is allowed, and
+    an idempotent re-run where the same execution_order is already reflected in buy_info is treated as normal.
+    Any other Request / Fill / Position / execution payload mismatch is returned as ERROR.
     """
     execution_order_id = execution_order.get("id")
     order_request_id = execution_order.get("connector_order_request_id")

@@ -1,9 +1,9 @@
 # C:\Workspaces\port_strategy_execution\execution_daily_position_sell_builder.py
 
 """
-Daily position SELL decision을 strategy_execution_order 저장 데이터로 변환한다.
-decision payload를 보존하면서 SELL 주문 수량, 금액, validation 정보를 구성한다.
-DB 저장은 호출자와 repository에서 수행한다.
+Converts a Daily position SELL decision into strategy_execution_order storage data.
+It composes the SELL order quantity, amount, and validation info while preserving the decision payload.
+DB storage is performed by the caller and the repository.
 """
 
 from decimal import Decimal
@@ -56,8 +56,8 @@ def build_daily_position_sell_order_data(
     decision,
 ):
     """
-    strategy_daily_position_decision SELL READY row를
-    strategy_execution_order insert용 dict로 변환.
+    Converts a strategy_daily_position_decision SELL READY row
+    into a dict for strategy_execution_order insert.
     """
 
     sell_info = normalize_json(decision.get("sell_info"))

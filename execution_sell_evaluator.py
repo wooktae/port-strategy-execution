@@ -1,22 +1,22 @@
 """
-포지션, 종목 feature, 시장 feature를 기준으로 SELL/HOLD 판단을 계산한다.
-DB나 connector에는 접근하지 않는 순수 평가 helper 성격이지만 전략 판단 정책을 담고 있다.
-점수 기준과 sell reason 변경은 전략 결과 변화로 이어지므로 별도 검토가 필요하다.
+Computes the SELL/HOLD decision based on the position, stock feature, and market feature.
+It is a pure evaluation helper that does not access the DB or the connector, but it holds strategy decision policy.
+Changes to the score criteria and the sell reason lead to changes in strategy results, so they require separate review.
 """
 
 from decimal import Decimal
 
 
 # =========================================================
-# 운영 SELL v1 설정값
+# Operational SELL v1 configuration values
 # =========================================================
-# 지금은 port_strategy_common.config의 SELL_CONFIG를 바로 물지 않고,
-# 운영 실행 쪽에서 안전한 기본값으로 시작.
+# For now, instead of directly wiring SELL_CONFIG from port_strategy_common.config,
+# start with safe defaults on the operational execution side.
 #
-# 이유:
-# - backtest sell_logic은 prev_close / today_close / raw_today_ret 구조
-# - 운영 sell_logic은 entry_price / current_price / connector snapshot 구조
-# - 입력 구조가 달라서 그대로 이식하면 위험함
+# Reason:
+# - backtest sell_logic uses a prev_close / today_close / raw_today_ret structure
+# - operational sell_logic uses an entry_price / current_price / connector snapshot structure
+# - the input structures differ, so porting it as-is is risky
 # =========================================================
 
 MIN_HOLDING_DAYS_FOR_NORMAL_SELL = 2
@@ -63,11 +63,11 @@ def normalize_feature_value(row, key, default="0"):
 
 def normalize_market_signal(market_feature):
     """
-    market feature에서 market signal을 최대한 안전하게 추출.
-    현재 프로젝트에서는 아래 가능성이 있음:
+    Extracts the market signal from the market feature as safely as possible.
+    In the current project, the following possibilities exist:
     - strategy_backtest_daily.market_signal
     - decision signal type
-    - pre_total_market_daily_feature 기반 평가 결과
+    - evaluation result based on pre_total_market_daily_feature
     """
 
     if not market_feature:
@@ -88,9 +88,9 @@ def normalize_market_signal(market_feature):
 
 def build_base_sell_info(position_ctx, stock_feature, market_feature):
     """
-    sell_info 기본 payload 생성.
-    나중에 strategy_execution_order.sell_info와
-    strategy_position_state.latest_sell_info에 저장할 수 있는 구조.
+    Generates the base sell_info payload.
+    A structure that can later be stored in strategy_execution_order.sell_info and
+    strategy_position_state.latest_sell_info.
     """
 
     flow_score = normalize_feature_value(stock_feature, "flow_score")
@@ -168,7 +168,7 @@ def make_result(
       - SELL_HARD_STOP
       - HOLD_MIN_HOLDING_DAYS
       - SKIP_NOT_SELLABLE
-      등
+      etc.
     """
 
     sell_info = build_base_sell_info(
@@ -204,12 +204,12 @@ def make_result(
 
 def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None):
     """
-    운영용 SELL 판단 v1.
+    Operational SELL decision v1.
 
-    주의:
-    - 이 함수는 주문을 생성하지 않음.
-    - DB도 수정하지 않음.
-    - SELL/HOLD/SKIP 판단 결과만 반환.
+    Note:
+    - This function does not create an order.
+    - It does not modify the DB either.
+    - It only returns the SELL/HOLD/SKIP decision result.
     """
 
     stock_feature = stock_feature or {}
@@ -234,7 +234,7 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
     market_signal = normalize_market_signal(market_feature)
 
     # -----------------------------------------------------
-    # 0. 데이터/주문 가능성 검증
+    # 0. Data / order feasibility validation
     # -----------------------------------------------------
     if remaining_qty <= 0:
         return make_result(
@@ -277,7 +277,7 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 1. 손절은 보유일수와 무관하게 최우선
+    # 1. Stop-loss has top priority, regardless of holding days
     # -----------------------------------------------------
     if pnl_rate <= HARD_STOP_LOSS_RATE:
         return make_result(
@@ -290,9 +290,9 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 2. 최소 보유일수 보호
-    #    현재 v1에서는 1일 이하는 일반 매도 금지.
-    #    단, hard stop은 위에서 이미 통과.
+    # 2. Minimum holding-days protection
+    #    In current v1, normal selling is prohibited at 1 day or less.
+    #    However, hard stop was already passed above.
     # -----------------------------------------------------
     if holding_days < MIN_HOLDING_DAYS_FOR_NORMAL_SELL:
         return make_result(
@@ -305,7 +305,7 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 3. 최대 보유일수
+    # 3. Maximum holding days
     # -----------------------------------------------------
     if holding_days >= MAX_HOLDING_DAYS:
         return make_result(
@@ -318,8 +318,8 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 4. 시장 BLOCK 조건
-    #    market_signal이 BLOCK인데 이익이 충분하지 않으면 매도.
+    # 4. Market BLOCK condition
+    #    If market_signal is BLOCK and the profit is not sufficient, sell.
     # -----------------------------------------------------
     if market_signal == "BLOCK" and pnl_rate < MARKET_BLOCK_KEEP_PROFIT:
         return make_result(
@@ -335,8 +335,8 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 5. 품질 저하
-    #    flow/final이 동시에 약하면 매도.
+    # 5. Quality degradation
+    #    If flow/final are weak at the same time, sell.
     # -----------------------------------------------------
     if (
         flow_score < QUALITY_DROP_FLOW_THRESHOLD
@@ -355,15 +355,15 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 6. 공매도/숏 압력 보조 경고
-    #    v1에서는 단독 SELL 조건으로 쓰지 않고 sell_info에만 기록.
+    # 6. Short-selling / short-pressure auxiliary warning
+    #    In v1, this is not used as a standalone SELL condition; it is only recorded in sell_info.
     # -----------------------------------------------------
     short_warning = None
     if short_pressure_score >= Decimal("0.80"):
         short_warning = f"short_pressure_score 높음: {short_pressure_score}"
 
     # -----------------------------------------------------
-    # 7. 수익권 포지션은 기본 보유
+    # 7. Profitable positions are held by default
     # -----------------------------------------------------
     if pnl_rate >= PROFIT_POSITION_RATE:
         detail = f"평가손익률 {pnl_rate} >= 수익권 기준 {PROFIT_POSITION_RATE}"
@@ -380,7 +380,7 @@ def evaluate_position_sell(position_ctx, stock_feature=None, market_feature=None
         )
 
     # -----------------------------------------------------
-    # 8. 기본 HOLD
+    # 8. Default HOLD
     # -----------------------------------------------------
     detail = (
         f"기본 HOLD: pnl_rate={pnl_rate}, pnl_amount={pnl_amount}, "

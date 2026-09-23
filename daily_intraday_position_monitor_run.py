@@ -1,7 +1,7 @@
 """
-OPEN strategy position을 장중 점검하고 손절 후보를 판단하는 monitor entrypoint.
-connector 실시간 현재가 조회, intraday 점검 결과 저장, INTRADAY_STOP_SELL 주문 생성 경로가 있다.
-외부 API 조회와 DB write 가능성이 있으므로 명시 승인 없이 실행하지 않는다.
+Monitor entrypoint that performs intraday checks on OPEN strategy positions and judges stop-loss candidates.
+It has paths for connector real-time current-price lookup, storing intraday check results, and creating INTRADAY_STOP_SELL orders.
+Because external API lookups and DB writes are possible, do not run it without explicit approval.
 """
 
 import argparse
@@ -108,10 +108,10 @@ def quantize_rate(value):
 
 def extract_current_price(quote_result):
     """
-    connector_quote_realtime.get_stock_price() 반환값에서 현재가 추출.
+    Extract the current price from the return value of connector_quote_realtime.get_stock_price().
 
-    connector_quote_realtime.py는 KIS output 기반으로 current_price 또는 price 성격의 값을 반환한다.
-    버전 차이를 고려해 여러 key를 fallback으로 본다.
+    connector_quote_realtime.py returns a current_price- or price-like value based on the KIS output.
+    Considering version differences, several keys are treated as fallbacks.
     """
 
     if not quote_result:
@@ -144,8 +144,8 @@ def extract_current_price(quote_result):
 
 def extract_previous_close(quote_result):
     """
-    전일종가 추출.
-    없으면 0으로 처리.
+    Extract the previous close.
+    If absent, treat it as 0.
     """
 
     if not quote_result:
@@ -185,8 +185,8 @@ def calculate_rate(current_price, base_price):
 
 def build_monitor_result(position, connector_snapshot, quote_result, hard_stop_rate):
     """
-    포지션, connector snapshot, 현재가 응답을 결합해 장중 점검 결과를 만든다.
-    손절 여부와 warning을 계산하지만 저장은 호출 흐름에서 별도로 수행한다.
+    Combine the position, connector snapshot, and current-price response to build the intraday check result.
+    It computes whether to stop out and any warnings, but saving is done separately in the call flow.
     """
     entry_price = to_decimal(position.get("entry_price"))
     remaining_qty = to_int(position.get("remaining_qty"))
@@ -200,7 +200,7 @@ def build_monitor_result(position, connector_snapshot, quote_result, hard_stop_r
     previous_close = extract_previous_close(quote_result)
 
     if previous_close <= 0 and connector_snapshot:
-        # snapshot에는 전일종가가 없으므로 fallback 없음
+        # The snapshot has no previous close, so there is no fallback
         previous_close = Decimal("0")
 
     sellable_qty = 0
@@ -294,26 +294,26 @@ def print_monitor_result(result, index):
 
 def should_save_intraday_check(monitor_result, created_execution_order_id=None):
     """
-    Intraday Monitor 결과 저장 여부 판단.
+    Determine whether to save the Intraday Monitor result.
 
-    운영 화면 기준:
-    - 장중 포지션 점검 버튼을 실행했으면 정상 결과도 저장한다.
-    - 그래야 Daily Batch 화면의 "최근 장중 포지션 점검 결과"가
-      실제 마지막 점검 결과로 갱신된다.
+    Based on the operational UI:
+    - If the intraday position check button was executed, save even a normal result.
+    - This is so that the "최근 장중 포지션 점검 결과" on the Daily Batch screen
+      is updated with the actual last check result.
 
-    저장 대상:
-    - 정상 점검
-    - warning 존재
-    - 손절 후보
-    - 주문 생성됨
-    - 현재가 조회 실패
+    Save targets:
+    - Normal check
+    - Warning present
+    - Stop-loss candidate
+    - Order created
+    - Current-price lookup failed
     """
 
     return True
 
 def build_intraday_stop_order_data(position, connector_snapshot, monitor_result, latest_plan):
     """
-    Intraday hard stop 결과를 strategy_execution_order row 데이터로 변환.
+    Convert the Intraday hard stop result into strategy_execution_order row data.
     """
 
     current_price = to_decimal(monitor_result.get("current_price"))
@@ -448,8 +448,8 @@ def build_intraday_stop_order_data(position, connector_snapshot, monitor_result,
 
 def create_intraday_stop_orders(conn, positions, stop_candidates):
     """
-    stop_candidates에 대해 INTRADAY_STOP_SELL READY 주문 생성.
-    strategy_execution_order 및 strategy_intraday_position_check write가 발생한다.
+    Create INTRADAY_STOP_SELL READY orders for the stop_candidates.
+    Writes to strategy_execution_order and strategy_intraday_position_check occur.
     """
 
     if not stop_candidates:

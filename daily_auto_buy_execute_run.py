@@ -1,7 +1,7 @@
 """
-READY 상태의 daily BUY execution order를 MarketConnector BUY 실행 요청으로 표시하는 entrypoint.
-Strategy Execution은 실제 주문 제출 없이 REQUESTED 상태 전환까지만 수행한다.
-자동 주문 요청 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
+Entrypoint that marks READY daily BUY execution orders as MarketConnector BUY execution requests.
+Strategy Execution only performs the transition to the REQUESTED status, without submitting an actual order.
+This is an automatic order request path, so it is not run without explicit approval and confirmation of the target environment.
 """
 
 import argparse
@@ -25,9 +25,9 @@ SIZING_POLICY = "PAPER_STRATEGY_FULL_STRATEGY_QTY"
 # -------------------------------------------------
 def _load_kr_holiday_checker():
     """
-    port-interest-crawler / port_interest_crawler 쪽의 interest_get_holidays.py를
-    사용할 수 있으면 한국 휴장일/공휴일 판정을 함께 사용한다.
-    없으면 주말 판정만 수행한다.
+    If interest_get_holidays.py from port-interest-crawler / port_interest_crawler
+    is available, also use its Korean market-holiday / public-holiday check.
+    Otherwise, only the weekend check is performed.
     """
     candidate_paths = [
         Path(r"C:\Workspaces\port-interest-crawler"),
@@ -60,7 +60,7 @@ def is_kr_business_day(target_date=None):
             if holiday_checker(target_date, "KR"):
                 return False, "KR_HOLIDAY"
         except Exception:
-            # 휴일 유틸 오류 때문에 배치를 죽이지는 않고, 주말 판정만 신뢰한다.
+            # Do not kill the batch because of a holiday-utility error; trust only the weekend check.
             pass
 
     return True, "BUSINESS_DAY"
@@ -211,8 +211,8 @@ def print_candidate(order, index):
 
 def execute_one_auto_buy(conn, order):
     """
-    단일 BUY execution order를 검증한 뒤 MarketConnector 실행 요청 상태로 전환한다.
-    실제 주문 제출과 connector_order_request 생성은 Strategy Execution에서 수행하지 않는다.
+    Validates a single BUY execution order, then transitions it to the MarketConnector execution request status.
+    Strategy Execution does not perform the actual order submission or the connector_order_request creation.
     """
     execution_order_id = order["id"]
 

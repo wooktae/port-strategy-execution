@@ -1,7 +1,7 @@
 """
-connector SELL 체결 내역을 execution order와 strategy_position_state에 동기화한다.
-SELL order를 FILLED로 갱신하고 포지션 remaining_qty를 차감/종료할 수 있다.
-체결 조회 및 포지션 변경 DB write가 발생하므로 명시 승인 없이 실행하지 않는다.
+Synchronizes connector SELL fill records into the execution order and strategy_position_state.
+It can update SELL orders to FILLED and deduct/close the position remaining_qty.
+Because fill-query and position-change DB writes occur, do not run it without explicit approval.
 """
 
 from decimal import Decimal
@@ -38,7 +38,7 @@ def to_int(value, default=0):
 
 def get_submitted_position_sell_orders(conn):
     """
-    아직 Strategy 쪽에서 FILLED/CLOSED 처리되지 않은 POSITION_SELL 주문 조회.
+    Query POSITION_SELL orders not yet marked FILLED/CLOSED on the Strategy side.
     """
 
     sql = """
@@ -184,8 +184,8 @@ def build_close_result(fill_summary):
 
 def mark_execution_order_filled(conn, execution_order, order_request, fill_summary):
     """
-    strategy_execution_order를 FILLED로 마감.
-    기존 result_payload에 sync_result를 추가한다.
+    Close the strategy_execution_order as FILLED.
+    Adds sync_result to the existing result_payload.
     """
 
     result_payload = execution_order.get("result_payload") or {}
@@ -217,12 +217,12 @@ def mark_execution_order_filled(conn, execution_order, order_request, fill_summa
 
 def close_position_after_sell_fill(conn, execution_order, fill_summary):
     """
-    strategy_position_state의 remaining_qty를 체결 수량만큼 차감한다.
+    Deduct the remaining_qty of strategy_position_state by the fill quantity.
 
-    보정 포인트:
-    - SELL 체결로 CLOSED 처리되는 경우 latest_sell_reason을 SELL 주문 기준으로 덮어쓴다.
-    - latest_validation_result의 action/reason/detail도 SELL 기준으로 덮어쓴다.
-    - 기존 HOLD_MIN_HOLDING_DAYS 같은 이전 평가 결과가 CLOSED 포지션에 남지 않도록 한다.
+    Correction points:
+    - When closed as CLOSED due to a SELL fill, overwrite latest_sell_reason based on the SELL order.
+    - Also overwrite the action/reason/detail of latest_validation_result based on SELL.
+    - Prevent a previous evaluation result such as HOLD_MIN_HOLDING_DAYS from remaining on the CLOSED position.
     """
 
     close_result = build_close_result(fill_summary)
@@ -295,8 +295,8 @@ def close_position_after_sell_fill(conn, execution_order, fill_summary):
 
 def sync_one_order(conn, execution_order):
     """
-    SUBMITTED SELL execution order 1건의 체결을 요약하고 포지션 종료 처리를 수행한다.
-    execution_order와 position_state 상태 전이에 직접 영향을 주는 핵심 함수다.
+    Summarize the fills of a single SUBMITTED SELL execution order and perform position closing.
+    This is a core function that directly affects the state transitions of execution_order and position_state.
     """
     order_request_id = execution_order.get("connector_order_request_id")
 

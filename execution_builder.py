@@ -1,9 +1,9 @@
 # C:\Workspaces\port_strategy_execution\execution_builder.py
 
 """
-backtest buy/sell 후보를 strategy_execution_order 저장 데이터로 변환하는 builder.
-DB repository helper를 일부 조회 용도로 사용하며 실제 저장은 호출자 entrypoint에서 수행한다.
-주문 수량, 금액, validation payload 계산 의미가 바뀌지 않도록 주의한다.
+Builder that converts backtest buy/sell candidates into strategy_execution_order storage data.
+It uses DB repository helpers for some queries, while the actual storage is done in the caller entrypoint.
+Take care not to change the calculation semantics of order quantity, amount, and validation payload.
 """
 
 from decimal import Decimal, ROUND_DOWN
@@ -19,8 +19,8 @@ from execution_repository import (
 
 def to_decimal(value, default="0"):
     """
-    dict/json 값에서 Decimal을 안전하게 추출.
-    buy_info/sell_info 값이 None, '', float, int, Decimal 어느 형태여도 처리.
+    Safely extracts a Decimal from a dict/json value.
+    Handles buy_info/sell_info values in any form: None, '', float, int, or Decimal.
     """
 
     if value is None:
@@ -52,9 +52,9 @@ def to_int(value, default=0):
 
 def normalize_info(value):
     """
-    psycopg2 jsonb는 보통 dict로 들어오지만,
-    환경에 따라 문자열 JSON처럼 들어올 가능성도 있어 일단 방어.
-    지금은 문자열이면 빈 dict로 처리.
+    psycopg2 jsonb usually comes in as a dict, but
+    depending on the environment it may come in as a JSON string, so guard against that.
+    For now, if it is a string, treat it as an empty dict.
     """
 
     if value is None:
@@ -111,7 +111,7 @@ def build_common_validation(
 
 def build_buy_execution_order(conn, plan_id, account, balance, market_daily, trade):
     """
-    strategy_trade_log의 buy_date=plan_date row를 BUY execution candidate로 변환.
+    Converts a strategy_trade_log row where buy_date=plan_date into a BUY execution candidate.
     """
 
     account_id = account["id"]
@@ -229,11 +229,11 @@ def build_buy_execution_order(conn, plan_id, account, balance, market_daily, tra
 
 def build_sell_execution_order(conn, plan_id, account, balance, market_daily, trade):
     """
-    strategy_trade_log의 sell_date=plan_date row를 SELL execution candidate로 변환.
+    Converts a strategy_trade_log row where sell_date=plan_date into a SELL execution candidate.
 
-    중요:
-    - SELL은 백테스트상 매도 후보여도 실제 계좌에 보유 수량이 있어야 READY.
-    - 실제 보유 수량이 없으면 BLOCKED 처리.
+    Important:
+    - Even if SELL is a sell candidate in the backtest, it is READY only if there is actual held quantity in the account.
+    - If there is no actual held quantity, it is treated as BLOCKED.
     """
 
     account_id = account["id"]
@@ -257,7 +257,7 @@ def build_sell_execution_order(conn, plan_id, account, balance, market_daily, tr
     tape_score = get_info_value(sell_info, "tape_score", "0")
     short_pressure_score = get_info_value(sell_info, "short_pressure_score", "0")
 
-    # sell_info에 점수 key가 없을 수 있어서 buy_info 기준으로 fallback
+    # sell_info may not have the score keys, so fall back to buy_info
     if final_score == 0:
         final_score = get_info_value(buy_info, "score", "0")
     if flow_score == 0:
@@ -357,7 +357,7 @@ def build_sell_execution_order(conn, plan_id, account, balance, market_daily, tr
 
 def build_execution_orders(conn, plan_id, account, balance, market_daily, buy_candidates, sell_candidates):
     """
-    BUY 후보 + SELL 후보를 모두 strategy_execution_order 저장용 dict 목록으로 변환.
+    Converts both BUY candidates and SELL candidates into a list of dicts for strategy_execution_order storage.
     """
 
     order_data_list = []
