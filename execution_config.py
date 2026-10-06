@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\execution_config.py
-
 """
 File that gathers the environment-variable-based settings for the execution module.
 It reads DB, account, broker, strategy, and sizing keys, but does not document sensitive values.

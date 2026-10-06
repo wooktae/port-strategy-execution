@@ -1,6 +1,4 @@
 import os
-# C:\Workspaces\port_strategy_execution\execution_build_candidates.py
-
 """
 Standalone execution-candidate generation script of a legacy nature.
 It can directly query daily signals and connector account/balance information and perform plan/order upserts.

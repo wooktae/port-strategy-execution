@@ -299,7 +299,7 @@ def should_save_intraday_check(monitor_result, created_execution_order_id=None):
 
     Based on the operational UI:
     - If the intraday position check button was executed, save even a normal result.
-    - This is so that the "최근 장중 포지션 점검 결과" on the Daily Batch screen
+    - This ensures the "Latest Intraday Position Check Result" on the Daily Batch screen
       is updated with the actual last check result.
 
     Save targets:

@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\execution_repository.py
-
 """
 Collection of DB repository functions for the execution module.
 It can insert/update strategy_execution_plan/order, position_state, daily decision, and intraday check.
@@ -167,7 +165,7 @@ def get_buy_candidates(conn, run_id, plan_date):
     """
     Buy candidates:
     Fetch trades from strategy_trade_log where buy_date = plan_date.
-    Same nature as the '2. 매수' section of the report.
+    Same nature as the "2. Buy" section of the report.
     """
 
     sql = """
@@ -208,7 +206,7 @@ def get_sell_candidates(conn, run_id, plan_date):
     """
     Sell candidates:
     Fetch trades from strategy_trade_log where sell_date = plan_date.
-    Same nature as the '3. 매도' section of the report.
+    Same nature as the "3. Sell" section of the report.
 
     However, when actually executing orders, this must always be cross-checked
     against the actual held quantity in connector_position_snapshot.

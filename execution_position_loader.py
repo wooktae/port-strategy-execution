@@ -1,6 +1,4 @@
-﻿# C:\Workspaces\port_strategy_execution\execution_position_loader.py
-
-"""
+﻿"""
 Loader that combines OPEN strategy_position_state with the connector position snapshot.
 It builds the context used by position evaluation and the SELL builder, and performs DB queries.
 There is an executable main at the bottom of the file, so confirm whether it is merely an import target before handling it.

@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\execution_daily_signal_builder.py
-
 """
 Builder that converts a Daily BUY signal into strategy_execution_order storage data.
 It queries the account/balance, existing position, latest price, and open orders to build BUY order candidates and a validation payload.

@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\execution_db.py
-
 """
 psycopg2 DB helper for the execution module.
 Provides common DB settings and RealDictCursor-based fetch/execute helpers.

@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\execution_daily_position_sell_builder.py
-
 """
 Converts a Daily position SELL decision into strategy_execution_order storage data.
 It composes the SELL order quantity, amount, and validation info while preserving the decision payload.

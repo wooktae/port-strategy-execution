@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\daily_sell_execution_run.py
-
 """
 Batch entrypoint that converts the SELL targets of the daily position decision into execution order candidates.
 It can link decision rows with execution orders and update the plan summary.

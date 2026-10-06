@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\daily_buy_execution_run.py
-
 """
 Batch entrypoint that generates execution order candidates based on the Daily BUY signal.
 It can read the account/balance, latest daily run, and BUY signals from the DB and store strategy_execution_order.

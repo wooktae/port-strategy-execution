@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\execution_builder.py
-
 """
 Builder that converts backtest buy/sell candidates into strategy_execution_order storage data.
 It uses DB repository helpers for some queries, while the actual storage is done in the caller entrypoint.

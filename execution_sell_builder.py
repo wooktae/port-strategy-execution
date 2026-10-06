@@ -1,6 +1,4 @@
-﻿# C:\Workspaces\port_strategy_execution\execution_sell_builder.py
-
-"""
+﻿"""
 Builder/entrypoint that evaluates OPEN positions to generate POSITION_SELL execution order candidates.
 It combines the position loader, sell evaluator, and repository update, and DB writes can occur.
 Do not arbitrarily change the operational execution order or the position-state update policy.

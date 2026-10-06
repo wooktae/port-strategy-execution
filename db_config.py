@@ -1,5 +1,3 @@
-# C:\Workspaces\port_strategy_execution\db_config.py
-
 """
 Builds the PostgreSQL connection settings for the execution module from environment variables.
 Sensitive values are not recorded in code or documentation and are injected via local environment variables.

@@ -1,6 +1,4 @@
-﻿# C:\Workspaces\port_strategy_execution\backtest_execution_run.py
-
-"""
+﻿"""
 Execution script that converts a backtest trade log into execution order candidates.
 It can read the latest strategy run, market daily, and buy/sell candidates from the DB and store the plan/order.
 Because operational DB writes may occur, do not run it during documentation/review work.
