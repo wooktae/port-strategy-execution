@@ -1,9 +1,7 @@
-﻿# C:\Workspaces\port_strategy_execution\execution_position_loader.py
-
-"""
-OPEN strategy_position_state와 connector position snapshot을 결합하는 loader.
-포지션 평가와 SELL builder가 사용할 context를 만들며 DB 조회를 수행한다.
-파일 하단에 실행 가능한 main이 있으므로 단순 import 대상인지 확인하고 다룬다.
+﻿"""
+Loader that combines OPEN strategy_position_state with the connector position snapshot.
+It builds the context used by position evaluation and the SELL builder, and performs DB queries.
+There is an executable main at the bottom of the file, so confirm whether it is merely an import target before handling it.
 """
 
 from datetime import date
@@ -81,12 +79,12 @@ def calc_holding_days(plan_date, entry_date):
 
 def get_open_strategy_positions(conn, account_id):
     """
-    전략 기준 OPEN / SELL_READY / SELL_ORDERED 포지션 조회.
+    Query OPEN / SELL_READY / SELL_ORDERED positions from the strategy perspective.
 
-    주의:
-    - 여기서는 실제 보유 snapshot과 직접 조인하지 않음.
-    - 순수 전략 포지션 상태만 가져옴.
-    - 실제 보유 여부는 get_latest_position_snapshot()에서 별도로 검증.
+    Note:
+    - This does not join directly with the actual holdings snapshot here.
+    - It fetches only the pure strategy position state.
+    - Actual holding status is validated separately in get_latest_position_snapshot().
     """
 
     sql = """
@@ -123,7 +121,7 @@ def get_open_strategy_positions(conn, account_id):
 
 def get_latest_position_snapshot(conn, account_id, ticker_code):
     """
-    계좌 + 종목 기준 최신 connector_position_snapshot 조회.
+    Query the latest connector_position_snapshot by account + stock.
     """
 
     sql = """
@@ -164,8 +162,8 @@ def get_latest_position_snapshot(conn, account_id, ticker_code):
 
 def build_position_context(position_state, snapshot, plan_date):
     """
-    strategy_position_state + connector_position_snapshot을 결합해
-    운영 SELL Logic 평가용 context를 만든다.
+    Combine strategy_position_state + connector_position_snapshot
+    to build the context for operational SELL Logic evaluation.
     """
 
     entry_price = to_decimal(position_state.get("entry_price"))
@@ -192,8 +190,8 @@ def build_position_context(position_state, snapshot, plan_date):
         snapshot_date = snapshot.get("as_of_date")
         snapshot_ts = snapshot.get("as_of_ts")
 
-    # 운영 SELL 판단에서는 우선 현재가가 있으면 현재가 기준,
-    # 없으면 entry_price를 fallback으로 사용한다.
+    # For operational SELL judgment, use the current price if available,
+    # otherwise use entry_price as a fallback.
     effective_current_price = (
         current_price if current_price and current_price > 0 else entry_price
     )
@@ -264,7 +262,7 @@ def build_position_context(position_state, snapshot, plan_date):
 
 def load_position_contexts(conn, account_id, plan_date):
     """
-    운영 SELL Logic 대상 포지션 context 목록 생성.
+    Build the list of position contexts targeted by operational SELL Logic.
     """
 
     position_states = get_open_strategy_positions(conn, account_id)
@@ -290,7 +288,7 @@ def load_position_contexts(conn, account_id, plan_date):
 
 
 # ---------------------------------------------------------
-# 단독 테스트용 엔트리포인트
+# Standalone test entrypoint
 # ---------------------------------------------------------
 from execution_db import get_conn
 from execution_repository import get_account
@@ -303,8 +301,8 @@ def main():
     try:
         account = get_account(conn)
 
-        # 테스트 기준 날짜.
-        # 필요하면 나중에 backtest_execution_run의 plan_date를 넘기도록 개선 가능.
+        # Test reference date.
+        # If needed, this can later be improved to pass backtest_execution_run's plan_date.
         plan_date = "2026-04-30"
 
         contexts = load_position_contexts(

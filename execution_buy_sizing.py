@@ -1,7 +1,7 @@
 """
-BUY 주문 후보의 주문 가능 금액과 수량을 계산하는 sizing helper.
-목표 비중, 현금, 최소 주문 금액 기준을 다루며 DB나 외부 API에는 접근하지 않는다.
-계산 정책 변경은 실제 주문 규모에 영향을 주므로 별도 검토가 필요하다.
+Sizing helper that computes the orderable amount and quantity for BUY order candidates.
+It handles target weight, cash, and minimum order amount criteria, and does not access the DB or external APIs.
+Changes to the calculation policy affect the actual order size, so a separate review is required.
 """
 
 from decimal import Decimal, ROUND_DOWN
@@ -61,14 +61,14 @@ def calculate_buy_order_sizing(
     max_order_amount=None,
 ):
     """
-    BUY 주문 수량 계산 전용 함수.
+    Function dedicated to computing the BUY order quantity.
 
-    목적:
-    - Daily Signal의 position_size를 실제 계좌 기준 주문 수량으로 변환
-    - 기존 available_cash * position_size 방식이 아니라,
-      총 평가금액 기준 목표 보유금액 방식 사용
+    Purpose:
+    - Convert the Daily Signal's position_size into an order quantity based on the actual account
+    - Use the target holding amount based on the total evaluation amount,
+      rather than the previous available_cash * position_size approach
 
-    산식:
+    Formula:
     1) target_position_amount = total_eval_amount * position_size
     2) additional_buy_amount = target_position_amount - current_position_eval_amount
     3) capped_buy_amount = min(additional_buy_amount, available_cash, max_order_amount)

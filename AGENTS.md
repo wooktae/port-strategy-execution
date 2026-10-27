@@ -1,137 +1,137 @@
 # AGENTS.md - port_strategy_execution
 
-## 1. 최우선 문서 가독성 규칙
+## 1. Highest-Priority Documentation Readability Rules
 
-이 규칙은 `port_strategy_execution`의 모든 Markdown 문서 작성과 수정에 우선 적용한다.
+These rules take priority in all Markdown documentation authoring and modification for `port_strategy_execution`.
 
-- 새로 만드는 독립 요약 표는 기본적으로 2컬럼을 사용한다.
-- 기본 컬럼은 `항목 / 값`이며, 문맥에 따라 `파일 / 역할`, `단계 / 책임`, `상태 / 의미`를 사용할 수 있다.
-- 기존 표에 행을 추가할 때는 기존 컬럼 구조를 유지한다.
-- 표 셀은 가능하면 2문장 이하로 작성한다.
-- 한 셀에 3개 이상의 사실을 장문으로 넣지 않는다.
-- 3개 이상의 사실은 여러 행으로 나누거나 상세 문서 링크로 분리한다.
-- 새로 만드는 표 셀은 300자를 넘기지 않는다.
-- 한 줄은 500자를 넘기지 않는다.
-- 긴 파일 목록, 전체 SQL, 전체 로그와 전체 DB 결과를 문서 본문에 붙이지 않는다.
-- 같은 사실을 `README.md`, `CHANGELOG.md`, `docs/source-file-catalog.md`에 장문으로 반복하지 않는다.
-- 제목만 다른 중복 섹션을 만들지 않는다.
-- 현재 상태와 과거 변경 이력을 한 문단에서 섞지 않는다.
-- 고유 파일명, 함수명, 테이블명, 컬럼명, 상태값과 실행 옵션은 코드 표기를 유지한다.
-- 한글 Markdown은 UTF-8 No BOM으로 저장한다.
-- 탭 문자와 후행 공백을 만들지 않는다.
+- New standalone summary tables use two columns by default.
+- The default columns are `Item / Value`, and depending on context `File / Role`, `Stage / Responsibility`, `Status / Meaning` may be used.
+- When adding a row to an existing table, preserve its existing column structure.
+- Keep table cells to no more than two sentences where possible.
+- Do not place three or more facts in a long sentence within one cell.
+- Split three or more facts into multiple rows or a link to a detailed document.
+- New table cells do not exceed 300 characters.
+- A single line does not exceed 500 characters.
+- Do not paste long file lists, complete SQL, complete logs, and complete DB results into the document body.
+- Do not repeat the same fact at length across `README.md`, `CHANGELOG.md`, and `docs/source-file-catalog.md`.
+- Do not create duplicate sections that differ only in title.
+- Do not mix the current state and past change history in one paragraph.
+- Preserve code notation for unique file names, function names, table names, column names, status values, and execution options.
+- Save Korean Markdown as UTF-8 without BOM.
+- Do not create tab characters and trailing whitespace.
 
-## 2. 규칙 우선순위
+## 2. Rule Priority
 
-| 범위 | 우선 기준 |
+| Scope | Priority basis |
 |---|---|
-| 사용자 최신 명시 요청 | 가장 높은 작업 지시 |
-| Workspace 공통 안전·작업 방식 | `.kiro/AGENTS.md` 최신 규칙 |
-| Execution 책임·데이터·상태 계약 | 이 `AGENTS.md` |
-| 직접 충돌 | 더 제한적이고 안전한 규칙 |
+| User's latest explicit request | Highest work instruction |
+| Workspace-common safety·work method | Latest rules in `.kiro/AGENTS.md` |
+| Execution responsibility·data·status contract | This `AGENTS.md` |
+| Direct conflict | The more restrictive and safer rule |
 
-- `.kiro/AGENTS.md`의 공통 규칙을 무시하지 않는다.
-- 이 파일은 `port_strategy_execution` 전용 책임과 위험을 보완한다.
-- 사용자가 대상 파일과 범위를 지정하면 그 범위를 넘기지 않는다.
-- 규칙이 충돌하거나 구현 사실이 불명확하면 실행하지 말고 정적 확인 결과와 한계를 보고한다.
+- Do not ignore the common rules in `.kiro/AGENTS.md`.
+- This file complements the responsibilities and risks specific to `port_strategy_execution`.
+- When the user specifies the target files and scope, do not exceed that scope.
+- If rules conflict or the implementation fact is unclear, do not execute; report the static confirmation result and its limitations.
 
-## 3. 프로젝트 역할
+## 3. Project Role
 
-`port_strategy_execution`은 전략 판단 결과를 실제 실행 계층의 계획과 주문 후보로 변환하고, 주문 요청·체결·전략 포지션 상태를 연결하는 Python MS다.
+`port_strategy_execution` is a Python MS that converts strategy decision results into execution-layer plans and order candidates, and connects order requests, fills, and strategy position state.
 
-주요 책임은 아래와 같다.
+The primary responsibilities are as follows.
 
-| 영역 | 책임 |
+| Area | Responsibility |
 |---|---|
-| Daily BUY Execution | Daily BUY signal을 BUY execution order 후보로 변환 |
-| Daily SELL Execution | Daily position SELL decision을 SELL execution order 후보로 변환 |
-| Execution Plan | `strategy_execution_plan` 생성과 요약 상태 관리 |
-| Execution Order | `strategy_execution_order` 생성·조회·상태 갱신 |
-| Auto Execute | 승인된 READY BUY·SELL order를 connector 호출 경로에 전달 |
-| Fill Sync | `connector_order_request`, `connector_fill` 기준 체결 상태 반영 |
-| Position Sync | BUY fill 기반 OPEN 포지션 생성과 SELL fill 기반 수량 차감 |
-| Intraday Monitor | OPEN 포지션 점검과 stop sell 후보 생성 |
-| Backtest Candidate | Backtest 결과를 별도 execution 후보로 변환할 수 있는 경로 유지 |
+| Daily BUY Execution | Convert Daily BUY signal into BUY execution order candidates |
+| Daily SELL Execution | Convert Daily position SELL decision into SELL execution order candidates |
+| Execution Plan | Create `strategy_execution_plan` and manage summary status |
+| Execution Order | Create, query, and update status of `strategy_execution_order` |
+| Auto Execute | Pass approved READY BUY·SELL orders to the connector call path |
+| Fill Sync | Reflect fill status based on `connector_order_request`, `connector_fill` |
+| Position Sync | Create OPEN positions from BUY fills and deduct quantity from SELL fills |
+| Intraday Monitor | Check OPEN positions and create stop sell candidates |
+| Backtest Candidate | Maintain the path that can convert Backtest results into separate execution candidates |
 
-현재 저장소는 패키지 계층보다 루트 실행형 Python 스크립트 중심이다.
+The current repository is centered on root-level executable Python scripts rather than a package layer.
 
-## 4. 책임 경계
+## 4. Responsibility Boundary
 
-Execution이 직접 책임지는 영역과 다른 MS의 책임을 섞지 않는다.
+Do not mix the areas Execution owns directly with the responsibilities of other MS.
 
-| 영역 | 담당 |
+| Area | Owner |
 |---|---|
-| 원천 데이터 수집 | Crawler |
-| Raw 전처리와 Feature 생성 | Preprocessor |
-| Daily BUY signal 판단 | StrategyDecision |
-| Daily Position HOLD·SELL·SKIP 판단 | StrategyDecision |
-| Backtest와 Research Report | StrategyResearch |
-| Execution Plan·Order와 전략 Position 연결 | StrategyExecution |
-| Broker·KIS API 내부 구현과 Token | MarketConnector |
-| 승인 UI와 화면 표시 | port-view |
-| 전체 Daily Orchestration | Scheduler와 Step Functions |
+| Source data collection | Crawler |
+| Raw preprocessing and Feature generation | Preprocessor |
+| Daily BUY signal decision | StrategyDecision |
+| Daily Position HOLD·SELL·SKIP decision | StrategyDecision |
+| Backtest and Research Report | StrategyResearch |
+| Connection of Execution Plan·Order with the strategy Position | StrategyExecution |
+| Broker·KIS API internal implementation and Token | MarketConnector |
+| Approval UI and screen display | port-view |
+| Full Daily Orchestration | Scheduler and Step Functions |
 
-- Execution은 BUY·SELL 판단 알고리즘 자체를 소유하지 않는다.
-- Execution은 MarketConnector 내부 주문 API 구현을 복제하지 않는다.
-- Execution은 전체 Step Functions 정의와 Scheduler 운영을 소유하지 않는다.
-- 다른 MS의 내부 구현은 Execution에 필요한 입력·출력 계약 수준으로만 문서화한다.
+- Execution does not own the BUY·SELL decision algorithm itself.
+- Execution does not duplicate the MarketConnector internal order API implementation.
+- Execution does not own the full Step Functions definition or Scheduler operation.
+- The internal implementation of other MS is documented only at the input/output contract level required by Execution.
 
-## 5. 작업 범위
+## 5. Work Scope
 
-- 기본 작업 범위는 `port_strategy_execution` 루트와 하위 파일이다.
-- 루트 밖 파일은 의존성 확인을 위한 읽기 전용으로만 사용한다.
-- 사용자 요청 없이 다른 MS 파일을 수정하지 않는다.
-- 문서 작업 요청이면 대상 Markdown 파일만 수정한다.
-- 코드 작업 요청이면 지정된 Python·설정·테스트 파일만 수정한다.
-- 전체 repository 전수 스캔, sub-agent, orchestrator와 새 scanner를 만들지 않는다.
-- 존재하지 않는 파일, 테스트, wrapper와 table을 문서 편의를 위해 만들거나 추정하지 않는다.
-- 생성된 report, dump, token, cache와 임시 파일을 운영 소스로 단정하지 않는다.
+- The default work scope is the `port_strategy_execution` root and its subordinate files.
+- Files outside the root are used only as read-only for dependency confirmation.
+- Do not modify other MS files without a user request.
+- For a documentation work request, modify only the target Markdown files.
+- For a code work request, modify only the specified Python·configuration·test files.
+- Do not create a full repository scan, sub-agent, orchestrator, or new scanner.
+- Do not create or assume nonexistent files, tests, wrappers, and tables for documentation convenience.
+- Do not treat generated reports, dumps, tokens, caches, and temporary files as operational sources.
 
-## 6. 작업 시작 전 정적 확인
+## 6. Static Confirmation Before Starting Work
 
-수정 전 아래 순서로 필요한 파일만 직접 읽는다.
+Before modifying, read only the necessary files directly, in the following order.
 
-1. 사용자 지정 대상 파일
-2. 이 `AGENTS.md`
-3. 대상 파일이 참조하는 entrypoint와 helper
-4. 관련 DB read·write와 connector 호출 지점
-5. 관련 테스트와 실행 wrapper
-6. 문서 변경 영향이 있는 `README.md`, `CHANGELOG.md`, `docs/source-file-catalog.md`
+1. User-specified target files
+2. This `AGENTS.md`
+3. The entrypoints and helpers referenced by the target files
+4. Related DB read·write and connector call points
+5. Related tests and execution wrappers
+6. `README.md`, `CHANGELOG.md`, `docs/source-file-catalog.md` if affected by documentation changes
 
-정적 확인 시 아래를 구분한다.
+During static confirmation, distinguish the following.
 
-| 구분 | 판단 기준 |
+| Category | Judgment basis |
 |---|---|
-| 현재 구현 | 실제 코드에서 직접 확인 |
-| 운영 사실 | repository 또는 사용자 제공 근거로 확인 |
-| 설계 원칙 | AGENTS와 문서에 명시된 규칙 |
-| 미검증 | 코드·운영 근거가 부족한 내용 |
-| 추정 금지 | 이름만 보고 책임·상태·테이블을 단정하지 않음 |
+| Current implementation | Confirmed directly in the actual code |
+| Operational fact | Confirmed by repository or user-provided evidence |
+| Design principle | Rules stated in AGENTS and documents |
+| Unverified | Content lacking code·operational evidence |
+| No assumptions | Do not assert responsibility·status·table by name alone |
 
-## 7. 실행 금지 기본 원칙
+## 7. Default Execution-Prohibition Principle
 
-사용자의 명시 승인과 대상 환경 확인 없이 아래 작업을 수행하지 않는다.
+Do not perform the following without the user's explicit approval and confirmation of the target environment.
 
-- execution plan 또는 execution order 생성
-- 자동 BUY 주문 실행
-- 자동 SELL 주문 실행
-- connector·broker·KIS 주문 API 호출
-- 체결 조회와 fill sync
-- position sync와 position state 변경
-- intraday quote 조회와 monitor 실행
-- intraday stop sell order 생성
-- DB DDL·DML과 commit
-- 외부 API 호출과 크롤링
-- AWS CLI·SDK 호출
-- ECS RunTask, SSM RunCommand, Step Functions 실행
-- EventBridge Scheduler 변경
-- Slack 또는 webhook 호출
-- Git commit, push, reset, restore와 checkout
+- Create an execution plan or execution order
+- Execute an automatic BUY order
+- Execute an automatic SELL order
+- Call the connector·broker·KIS order API
+- Query fills and fill sync
+- Position sync and position state changes
+- Intraday quote query and monitor execution
+- Create intraday stop sell orders
+- DB DDL·DML and commit
+- External API calls and crawling
+- AWS CLI·SDK calls
+- ECS RunTask, SSM RunCommand, Step Functions execution
+- EventBridge Scheduler changes
+- Slack or webhook calls
+- Git commit, push, reset, restore, and checkout
 
-Python import도 module import 시 DB 연결이나 실행 side effect 가능성이 있으므로 문서 점검에서는 수행하지 않는다.
+Python import may also cause a DB connection or execution side effect at module import, so it is not performed during documentation review.
 
-## 8. 실행 금지 Entry Point
+## 8. Execution-Prohibited Entry Points
 
-아래 파일은 DB write, 주문 호출, 체결·포지션 변경 가능성이 있으므로 명시 승인 없이 실행하지 않는다.
+The following files may cause DB writes, order calls, and fill·position changes, so they are not executed without explicit approval.
 
 - `daily_buy_execution_run.py`
 - `daily_sell_execution_run.py`
@@ -147,286 +147,286 @@ Python import도 module import 시 DB 연결이나 실행 side effect 가능성�
 - `backtest_execution_run.py`
 - `execution_position_loader.py`
 
-- `--execute`, `--create-order`, `--confirm-live` 같은 옵션은 이름만 보고 안전하다고 판단하지 않는다.
-- dry-run처럼 보이는 경로도 execution mode 또는 검증 결과를 DB에 저장할 수 있으므로 실제 코드를 확인한다.
-- `if __name__ == "__main__":`가 있는 loader·helper는 단순 import 대상이라고 단정하지 않는다.
+- Do not judge options such as `--execute`, `--create-order`, `--confirm-live` as safe by name alone.
+- A path that looks like a dry-run may still store the execution mode or validation result in the DB, so confirm the actual code.
+- Do not assume a loader·helper with `if __name__ == "__main__":` is a simple import target.
 
-## 9. 주요 파일 책임
+## 9. Primary File Responsibilities
 
 ### 9.1 Daily BUY
 
-| 파일 | 확인할 책임 |
+| File | Responsibility to confirm |
 |---|---|
-| `daily_buy_execution_run.py` | 최신 Daily Run과 BUY signal 조회, Plan·Order 생성 흐름 |
-| `execution_daily_signal_builder.py` | BUY signal을 execution order payload로 변환 |
-| `execution_buy_sizing.py` | 현금·보유·목표 금액 기반 주문 수량 계산 |
-| `execution_repository.py` | Plan·Order upsert와 summary 갱신 |
+| `daily_buy_execution_run.py` | Query the latest Daily Run and BUY signal, and the Plan·Order creation flow |
+| `execution_daily_signal_builder.py` | Convert BUY signal into execution order payload |
+| `execution_buy_sizing.py` | Compute order quantity based on cash·holding·target amount |
+| `execution_repository.py` | Plan·Order upsert and summary update |
 
 ### 9.2 Daily SELL
 
-| 파일 | 확인할 책임 |
+| File | Responsibility to confirm |
 |---|---|
-| `daily_sell_execution_run.py` | 최신 Position Decision Run과 SELL decision 조회 |
-| `execution_daily_position_sell_builder.py` | SELL decision을 execution order payload로 변환 |
-| `execution_repository.py` | Order 저장과 decision row 연결 |
+| `daily_sell_execution_run.py` | Query the latest Position Decision Run and SELL decision |
+| `execution_daily_position_sell_builder.py` | Convert SELL decision into execution order payload |
+| `execution_repository.py` | Store Order and link the decision row |
 
 ### 9.3 Auto Execute
 
-| 파일 | 확인할 책임 |
+| File | Responsibility to confirm |
 |---|---|
-| `daily_auto_buy_execute_run.py` | READY BUY 조회와 connector BUY 호출 경로 |
-| `daily_auto_sell_execute_run.py` | READY SELL 조회, 매도 가능 수량 확인과 connector SELL 호출 |
-| `execution_execute_order.py` | 단일 Order 실행 모드와 live 확인 경계 |
+| `daily_auto_buy_execute_run.py` | Query READY BUY and the connector BUY call path |
+| `daily_auto_sell_execute_run.py` | Query READY SELL, confirm sellable quantity, and call connector SELL |
+| `execution_execute_order.py` | Single Order execution mode and live confirmation boundary |
 
 ### 9.4 Fill·Position Sync
 
-| 파일 | 확인할 책임 |
+| File | Responsibility to confirm |
 |---|---|
-| `execution_sync_buy_fill.py` | BUY fill 집계와 execution order 상태 반영 |
-| `execution_sync_sell_fill.py` | SELL fill 집계와 remaining quantity·상태 반영 |
-| `execution_sync_buy_position.py` | FILLED BUY 기반 OPEN position 생성 또는 병합 |
+| `execution_sync_buy_fill.py` | Aggregate BUY fills and reflect execution order status |
+| `execution_sync_sell_fill.py` | Aggregate SELL fills and reflect remaining quantity·status |
+| `execution_sync_buy_position.py` | Create or merge OPEN position based on FILLED BUY |
 
 ### 9.5 Intraday
 
-| 파일 | 확인할 책임 |
+| File | Responsibility to confirm |
 |---|---|
-| `execution_position_loader.py` | 전략 OPEN position과 connector snapshot 결합 |
-| `execution_sell_evaluator.py` | Position·Stock Feature·Market Feature 평가 |
-| `execution_sell_builder.py` | POSITION_SELL execution order 후보 생성 |
-| `daily_intraday_position_monitor_run.py` | 점검 결과 저장과 hard stop order 후보 생성 |
+| `execution_position_loader.py` | Combine strategy OPEN position with connector snapshot |
+| `execution_sell_evaluator.py` | Evaluate Position·Stock Feature·Market Feature |
+| `execution_sell_builder.py` | Create POSITION_SELL execution order candidates |
+| `daily_intraday_position_monitor_run.py` | Store check results and create hard stop order candidates |
 
-### 9.6 공통 DB·설정
+### 9.6 Common DB·Config
 
-| 파일 | 확인할 책임 |
+| File | Responsibility to confirm |
 |---|---|
-| `execution_repository.py` | Execution DB read·write 집중 지점 |
-| `execution_db.py` | Connection과 fetch·execute helper |
-| `db_config.py` | DB 환경변수와 search path 설정 |
-| `execution_config.py` | 계좌·broker·environment·strategy·sizing 설정 |
+| `execution_repository.py` | Central point for Execution DB read·write |
+| `execution_db.py` | Connection and fetch·execute helper |
+| `db_config.py` | DB environment variables and search path settings |
+| `execution_config.py` | Account·broker·environment·strategy·sizing settings |
 
-## 10. Daily Execution 흐름 계약
+## 10. Daily Execution Flow Contract
 
-문서와 코드에서 아래 단계를 혼동하지 않는다.
+Do not confuse the following stages in documents and code.
 
-| 단계 | Execution 관점 |
+| Stage | Execution perspective |
 |---|---|
-| Step 8 | Daily BUY execution order 후보 생성 |
-| Step 9 | Daily SELL execution order 후보 생성 |
-| Step 10 | READY SELL auto execute 경로 |
-| Step 11 | READY BUY auto execute 경로 |
-| Step 12~13 | MarketConnector 주문 제출·조회 구간 |
+| Step 8 | Daily BUY execution order candidate creation |
+| Step 9 | Daily SELL execution order candidate creation |
+| Step 10 | READY SELL auto execute path |
+| Step 11 | READY BUY auto execute path |
+| Step 12~13 | MarketConnector order submission·query segment |
 | Step 14 | SELL fill sync |
 | Step 15 | BUY fill sync |
 | Step 16 | BUY position sync |
-| Step 17 | MarketConnector balance refresh 구간 |
+| Step 17 | MarketConnector balance refresh segment |
 
-- 실제 Step 번호와 호출 파일은 orchestration 정의 또는 운영 근거로 확인한다.
-- Execution 내부 파일만 보고 전체 state machine 순서를 확정하지 않는다.
-- Step 12~13과 Step 17의 내부 구현을 Execution 책임으로 확장하지 않는다.
-- 후보 생성 성공, 주문 제출 성공, 체결 성공, position sync 성공을 하나의 성공 상태로 합치지 않는다.
+- Confirm the actual Step numbers and calling files against the orchestration definition or operational evidence.
+- Do not finalize the full state machine order by looking at Execution internal files alone.
+- Do not extend the internal implementation of Step 12~13 and Step 17 into Execution responsibility.
+- Do not merge candidate creation success, order submission success, fill success, and position sync success into one success state.
 
-## 11. Execution Plan 계약
+## 11. Execution Plan Contract
 
-`strategy_execution_plan` 변경 시 아래를 확인한다.
+When changing `strategy_execution_plan`, confirm the following.
 
-- plan source와 source run 식별자
-- business date 또는 trade date
-- strategy name과 version
+- plan source and source run identifiers
+- business date or trade date
+- strategy name and version
 - plan status
-- order count와 summary 집계
-- 동일 source에 대한 재실행 정책
-- create-or-get 또는 upsert 기준
-- 빈 후보 회차 처리
-- 일부 order 실패 시 plan status
-- 최종 완료 판단 시점
+- order count and summary aggregation
+- re-run policy for the same source
+- create-or-get or upsert criterion
+- empty-candidate cycle handling
+- plan status when some orders fail
+- the point at which final completion is judged
 
-Plan status 문자열과 unique key는 코드에서 확인한 값만 사용한다.
+Use only the Plan status strings and unique keys confirmed in the code.
 
-## 12. Execution Order 계약
+## 12. Execution Order Contract
 
-`strategy_execution_order` 변경 시 아래를 확인한다.
+When changing `strategy_execution_order`, confirm the following.
 
-- side와 order type
-- source type과 source row 식별자
-- ticker와 order quantity
-- limit·market 등 가격 정책
+- side and order type
+- source type and source row identifier
+- ticker and order quantity
+- price policy such as limit·market
 - execution mode
-- status 전이
-- connector order request 연결
-- request quantity와 filled quantity
+- status transition
+- connector order request link
+- request quantity and filled quantity
 - average fill price
 - error·reason payload
-- idempotency 기준
-- retry 가능 상태
-- 최종 상태와 재처리 정책
+- idempotency criterion
+- retryable status
+- final status and reprocessing policy
 
-- `READY`, `REQUESTED`, `ACCEPTED`, `FILLED`, `FAILED` 같은 상태값은 실제 코드와 DB 계약을 확인한다.
-- 문서 편의를 위해 존재하지 않는 상태값을 추가하지 않는다.
-- 동일 source row가 중복 order를 만들지 않도록 unique key와 upsert 기준을 유지한다.
-- connector request가 이미 연결된 order를 재제출하는 경로를 임의로 만들지 않는다.
+- Confirm status values such as `READY`, `REQUESTED`, `ACCEPTED`, `FILLED`, `FAILED` against the actual code and DB contract.
+- Do not add nonexistent status values for documentation convenience.
+- Maintain the unique key and upsert criteria so the same source row does not create duplicate orders.
+- Do not arbitrarily create a path that resubmits an order whose connector request is already linked.
 
-### 12.1 Order Chain Validator 계약
+### 12.1 Order Chain Validator Contract
 
-`execution_validate_order_chain.py`는 read-only 검증이며 아래를 지킨다.
+`execution_validate_order_chain.py` is a read-only validation and adheres to the following.
 
-- Execution Order 상태만 단독으로 판정하지 않는다.
-- Connector Request 최종 상태를 확인한다.
-- Fill 누적 수량을 확인한다.
-- FILLED BUY의 Position 추적을 확인한다.
-- 정상 CANCELED 체인은 Fill·Position 미존재를 허용한다.
-- `--allow-no-target`가 실제 Target 오류를 숨기는 옵션이 아님을 유지한다.
-- Validator 성공은 대상 수와 오류 수를 함께 확인한다.
+- Do not judge by the Execution Order status alone.
+- Confirm the Connector Request final status.
+- Confirm the Fill cumulative quantity.
+- Confirm the Position trace of a FILLED BUY.
+- A normal CANCELED chain allows the absence of Fill·Position.
+- Maintain that `--allow-no-target` is not an option that hides an actual Target error.
+- Validator success confirms the target count and error count together.
 
-## 13. 주문 제출 안전 계약
+## 13. Order Submission Safety Contract
 
-Auto BUY·SELL과 단일 Order 실행 경로를 수정할 때 아래를 반드시 확인한다.
+When modifying the Auto BUY·SELL and single Order execution paths, always confirm the following.
 
-| 항목 | 확인 기준 |
+| Item | Confirmation criterion |
 |---|---|
-| 대상 상태 | 실제 제출 가능한 execution order status |
-| 실행 모드 | `DRY_RUN`, `MANUAL_TEST`, `PAPER_STRATEGY`, `LIVE_STRATEGY` |
-| 승인 경계 | 사용자·운영자 승인 또는 orchestration gate |
-| 중복 제출 | 기존 connector request와 broker order 존재 여부 |
-| 수량 | requested quantity와 주문 가능 quantity |
-| 환경 | local·paper·live 분리 |
-| 실패 처리 | DB 상태, rollback, retry와 exit code |
+| Target status | The actually submittable execution order status |
+| Execution mode | `DRY_RUN`, `MANUAL_TEST`, `PAPER_STRATEGY`, `LIVE_STRATEGY` |
+| Approval boundary | User·operator approval or an orchestration gate |
+| Duplicate submission | Whether an existing connector request and broker order exist |
+| Quantity | requested quantity and orderable quantity |
+| Environment | local·paper·live separation |
+| Failure handling | DB status, rollback, retry, and exit code |
 
-- Live 경로의 확인 조건을 약화하지 않는다.
-- `--execute` 기본값과 명시 여부를 임의로 바꾸지 않는다.
-- connector helper 호출 전 DB commit 여부와 호출 후 상태 기록 순서를 확인한다.
-- 외부 주문 성공 후 로컬 DB 기록 실패 가능성을 고려한다.
-- 로컬 DB 상태만으로 broker 주문 미제출을 단정하지 않는다.
-- timeout과 예외 발생 시 재호출이 중복 주문으로 이어지는지 확인한다.
+- Do not weaken the confirmation conditions of the Live path.
+- Do not arbitrarily change the `--execute` default and whether it is specified.
+- Confirm whether the DB commits before the connector helper call and the status recording order after the call.
+- Consider the possibility of a local DB write failure after an external order success.
+- Do not conclude the broker order was not submitted based on the local DB status alone.
+- Confirm whether a re-call on timeout and exception leads to a duplicate order.
 
-## 14. BUY Sizing 계약
+## 14. BUY Sizing Contract
 
-`execution_buy_sizing.py`와 BUY builder를 수정할 때 아래를 확인한다.
+When modifying `execution_buy_sizing.py` and the BUY builder, confirm the following.
 
-- 사용 가능 현금
-- 현재 보유 수량과 평가액
-- 목표 금액 또는 목표 비중
-- 최대 주문 금액 비율
-- 최소 주문 금액
-- 기준 가격
-- 정수 수량 반올림
-- 0주와 최소 금액 미달 처리
-- 여러 BUY 후보 간 현금 배분 순서
-- 동일 ticker 기존 OPEN position 처리
-- 계좌 snapshot 최신성
+- available cash
+- current holding quantity and valuation
+- target amount or target weight
+- maximum order amount ratio
+- minimum order amount
+- reference price
+- integer quantity rounding
+- 0-share and below-minimum-amount handling
+- cash allocation order across multiple BUY candidates
+- handling of an existing OPEN position for the same ticker
+- account snapshot freshness
 
-Sizing 계산은 단위, 반올림과 가격 시점을 추정하지 않는다.
+Sizing calculation does not assume the unit, rounding, and price point.
 
-다중 후보 누적 가용현금 배분 시 아래를 지킨다.
+For multi-candidate cumulative available-cash allocation, adhere to the following.
 
-- 여러 BUY 후보는 하나의 Plan 내 누적 가용현금 기준으로 계산한다.
-- 후보 처리 순서를 명시적으로 유지한다.
-- READY 주문만 잔여 현금을 차감한다.
-- BLOCKED·SKIPPED·0주 후보는 현금을 차감하지 않는다.
-- 후속 후보 계산에 최초 가용현금을 재사용하지 않는다.
-- 시장가 여유분과 예상 주문 금액의 단위를 확인한다.
-- 단일 종목 Sizing 함수와 Plan 단위 누적 배분 책임을 구분한다.
-- 테스트에서 후보 순서, READY·BLOCKED 혼합과 현금 경계값을 검증한다.
+- Multiple BUY candidates are computed based on cumulative available cash within one Plan.
+- Explicitly preserve the candidate processing order.
+- Only READY orders deduct remaining cash.
+- BLOCKED·SKIPPED·0-share candidates do not deduct cash.
+- Do not reuse the initial available cash for subsequent candidate calculations.
+- Confirm the units of the market-order margin and the estimated order amount.
+- Distinguish the single-ticker Sizing function from the Plan-level cumulative allocation responsibility.
+- In tests, validate candidate order, READY·BLOCKED mixtures, and cash boundary values.
 
-## 15. SELL 수량 계약
+## 15. SELL Quantity Contract
 
-SELL order 생성과 제출 시 아래를 확인한다.
+When creating and submitting a SELL order, confirm the following.
 
-- 전략 position remaining quantity
-- connector position snapshot의 보유 수량
-- 매도 가능 수량
-- 기존 SELL_ORDERED 또는 미체결 주문
-- partial fill 누적 수량
-- 중복 SELL 방지 기준
-- 전량·부분 매도 정책
-- 0주와 음수 방지
-- position status 전이
+- strategy position remaining quantity
+- holding quantity in the connector position snapshot
+- sellable quantity
+- existing SELL_ORDERED or unfilled orders
+- partial fill cumulative quantity
+- duplicate SELL prevention criterion
+- full·partial sell policy
+- 0-share and negative prevention
+- position status transition
 
-전략 position 수량과 broker snapshot 수량이 다를 때 임의로 한쪽을 정답으로 선택하지 않는다.
+When the strategy position quantity and broker snapshot quantity differ, do not arbitrarily choose one as correct.
 
-## 16. Fill Sync 계약
+## 16. Fill Sync Contract
 
-BUY·SELL fill sync 변경 시 아래를 확인한다.
+When changing BUY·SELL fill sync, confirm the following.
 
-| 항목 | 확인 기준 |
+| Item | Confirmation criterion |
 |---|---|
-| 원본 요청 | `connector_order_request` 연결 기준 |
-| 체결 원본 | `connector_fill` 집계 기준 |
-| 중복 Fill | fill unique key와 중복 제거 |
-| 부분 체결 | requested quantity와 cumulative filled quantity 비교 |
-| 평균가 | weighted average 계산 기준 |
-| 최종 상태 | FILLED 판정 조건 |
-| 무체결 | 상태 유지 또는 별도 상태 전이 |
-| 재실행 | 동일 fill 재반영 방지 |
+| Source request | `connector_order_request` link basis |
+| Fill source | `connector_fill` aggregation basis |
+| Duplicate Fill | fill unique key and deduplication |
+| Partial fill | Compare requested quantity and cumulative filled quantity |
+| Average price | weighted average calculation basis |
+| Final status | FILLED judgment condition |
+| No fill | Maintain status or a separate status transition |
+| Re-run | Prevent re-reflection of the same fill |
 
-- 체결 row 존재만으로 전량 FILLED를 단정하지 않는다.
-- 부분 체결을 전량 체결로 처리하지 않는다.
-- 취소·거부·정정 상태가 있다면 실제 connector 계약을 확인한다.
-- fill sync와 position sync의 transaction 경계를 임의로 합치거나 분리하지 않는다.
+- Do not assert full FILLED by the existence of a fill row alone.
+- Do not treat a partial fill as a full fill.
+- If cancellation·rejection·correction states exist, confirm the actual connector contract.
+- Do not arbitrarily merge or split the transaction boundaries of fill sync and position sync.
 
-CANCELED 취소 주문 처리 시 아래를 지킨다.
+When handling a CANCELED canceled order, adhere to the following.
 
-- CANCELED는 실패와 동일한 상태가 아니다.
-- 유효한 취소 요청과 원 주문 최종 상태를 함께 확인한다.
-- 체결 0건의 정상 취소와 데이터 연결 누락을 구분한다.
-- CANCELED 주문은 실패 집계에서 제외할 수 있으나, 근거 없는 상태를 성공으로 처리하지 않는다.
-- Summary에서 FILLED·CANCELED·Terminal·Failed를 분리한다.
-- 일부 Order 성공 후 하나의 취소 주문 때문에 전체 Transaction을 Rollback하지 않도록 Transaction 경계를 확인한다.
+- CANCELED is not the same status as a failure.
+- Confirm the valid cancellation request and the original order's final status together.
+- Distinguish a normal cancellation with 0 fills from a missing data link.
+- A CANCELED order may be excluded from the failure aggregation, but do not treat an unfounded status as a success.
+- In the Summary, separate FILLED·CANCELED·Terminal·Failed.
+- Confirm the Transaction boundary so that a single canceled order does not roll back the entire Transaction after some Orders succeed.
 
-## 17. Position State 계약
+## 17. Position State Contract
 
-`strategy_position_state` 변경 시 아래를 유지한다.
+When changing `strategy_position_state`, maintain the following.
 
-- BUY fill 이전에 OPEN position을 확정하지 않는다.
-- 동일 ticker와 strategy의 기존 OPEN row 병합 기준을 확인한다.
-- quantity, remaining quantity와 average entry price 계산을 확인한다.
-- SELL 주문 제출 상태와 SELL fill 완료 상태를 구분한다.
-- partial SELL은 remaining quantity만 차감한다.
-- remaining quantity가 0이 되는 조건에서만 CLOSED 전이를 검토한다.
-- 음수 remaining quantity를 허용하지 않는다.
-- execution order와 source decision 연결을 보존한다.
-- 중복 sync가 quantity를 반복 증가·차감하지 않도록 한다.
+- Do not finalize an OPEN position before the BUY fill.
+- Confirm the merge criterion for an existing OPEN row of the same ticker and strategy.
+- Confirm the calculation of quantity, remaining quantity, and average entry price.
+- Distinguish the SELL order submission status from the SELL fill completion status.
+- A partial SELL deducts only the remaining quantity.
+- Consider the CLOSED transition only under the condition that remaining quantity becomes 0.
+- Do not allow negative remaining quantity.
+- Preserve the link between execution order and source decision.
+- Ensure a duplicate sync does not repeatedly increase·deduct quantity.
 
-BUY 체결과 취소 반영 시 아래를 지킨다.
+When reflecting BUY fills and cancellations, adhere to the following.
 
-- CANCELED BUY에는 Position을 생성하지 않는다.
-- FILLED BUY는 Position Trace가 없으면 Validator 실패로 본다.
-- Step 15의 FILLED Commit과 Step 16 대상 조회 순서를 확인한다.
-- `target_count=0` 성공을 Position 생성 성공으로 표현하지 않는다.
-- Position Sync 검증 시 대상·생성·실패 건수와 Source Order·Request·Fill 연결을 확인한다.
+- Do not create a Position for a CANCELED BUY.
+- A FILLED BUY is treated as a Validator failure if it has no Position Trace.
+- Confirm the order of the Step 15 FILLED Commit and the Step 16 target query.
+- Do not represent a `target_count=0` success as a Position creation success.
+- During Position Sync validation, confirm the target·created·failed counts and the Source Order·Request·Fill links.
 
-## 18. Intraday Monitor 계약
+## 18. Intraday Monitor Contract
 
-장중 monitor와 stop sell 후보 변경 시 아래를 확인한다.
+When changing the intraday monitor and stop sell candidates, confirm the following.
 
-- OPEN position 조회 기준
-- latest connector position snapshot 선택 기준
-- latest stock feature와 market feature 기준일
-- quote provider와 quote timestamp
-- 정상 점검 결과 저장 정책
-- 이상·누락 데이터 처리
-- hard stop 조건
-- HOLD·SELL 결과와 reason
-- `--create-order` 명시 여부
-- 동일 position·점검 시각 중복 order 방지
-- approval gate와 실제 주문 제출 분리
+- OPEN position query criterion
+- latest connector position snapshot selection criterion
+- latest stock feature and market feature reference date
+- quote provider and quote timestamp
+- normal check result storage policy
+- handling of anomalous·missing data
+- hard stop condition
+- HOLD·SELL result and reason
+- whether `--create-order` is specified
+- prevention of duplicate orders for the same position·check time
+- separation of the approval gate from actual order submission
 
-- 점검 결과 저장과 order 생성은 서로 다른 영향으로 구분한다.
-- 정상 결과도 `strategy_intraday_position_check`에 저장하는 현재 정책을 임의로 되돌리지 않는다.
-- intraday stop order 생성 성공을 broker 주문 성공으로 표현하지 않는다.
+- Distinguish storing the check result and creating an order as different impacts.
+- Do not arbitrarily revert the current policy of storing normal results in `strategy_intraday_position_check`.
+- Do not represent intraday stop order creation success as broker order success.
 
-## 19. Backtest 기반 후보 계약
+## 19. Backtest-Based Candidate Contract
 
-`backtest_execution_run.py`, `execution_builder.py`, `execution_build_candidates.py`는 Daily 운영 경로와 별도 계열로 취급한다.
+`backtest_execution_run.py`, `execution_builder.py`, `execution_build_candidates.py` are treated as a separate line from the Daily operational path.
 
-- 실제 입력 table과 run 선택 기준을 확인한다.
-- backtest BUY·SELL row를 Daily signal 또는 Daily position decision으로 표현하지 않는다.
-- 운영 Daily plan과 backtest plan의 source type을 혼합하지 않는다.
-- legacy 또는 독립형 후보 생성 파일은 현재 운영 entrypoint인지 확인한다.
-- 단순 파일명만으로 삭제 후보로 분류하지 않는다.
+- Confirm the actual input table and run selection criterion.
+- Do not represent backtest BUY·SELL rows as Daily signals or Daily position decisions.
+- Do not mix the source type of operational Daily plans and backtest plans.
+- Confirm whether legacy or standalone candidate creation files are current operational entrypoints.
+- Do not classify as a deletion candidate by the filename alone.
 
-## 20. DB 계약
+## 20. DB Contract
 
-현재 문서 기준 주요 write 대상은 아래와 같다.
+Per the current documentation, the primary write targets are as follows.
 
 - `strategy_execution_plan`
 - `strategy_execution_order`
@@ -434,7 +434,7 @@ BUY 체결과 취소 반영 시 아래를 지킨다.
 - `strategy_daily_position_decision`
 - `strategy_intraday_position_check`
 
-주요 connector read 대상은 아래와 같다.
+The primary connector read targets are as follows.
 
 - `connector_order_request`
 - `connector_fill`
@@ -442,278 +442,278 @@ BUY 체결과 취소 반영 시 아래를 지킨다.
 - `connector_balance_snapshot`
 - `connector_position_snapshot`
 
-DB 변경 시 아래를 확인한다.
+When changing the DB, confirm the following.
 
-- 실제 schema와 search path
-- table과 column 존재 여부
-- primary key와 unique key
-- foreign key 또는 논리 연결
+- actual schema and search path
+- table and column existence
+- primary key and unique key
+- foreign key or logical link
 - insert·update·upsert conflict target
-- transaction과 rollback
-- commit 위치
-- cursor와 connection close
-- rowcount 검증
-- empty result 처리
-- duplicate row와 join cardinality
-- timezone과 business date
+- transaction and rollback
+- commit location
+- cursor and connection close
+- rowcount validation
+- empty result handling
+- duplicate row and join cardinality
+- timezone and business date
 
-컬럼명을 예상하지 않는다. `information_schema` 또는 실제 코드에서 확인한 이름만 사용한다.
+Do not assume column names. Use only names confirmed in `information_schema` or the actual code.
 
-## 21. 환경변수와 설정
+## 21. Environment Variables and Configuration
 
-- DB 환경변수는 `db_config.py` 실제 구현을 기준으로 한다.
-- `INTEREST_DB_PASSWORD` 실제 값은 읽거나 기록하지 않는다.
-- `PORTFOLIO_DB_NAME` 등 호환 환경변수는 실제 코드 사용 여부를 확인한 뒤 문서화한다.
-- 계좌번호, broker, environment, strategy와 sizing key는 key 이름만 문서화할 수 있다.
-- default 값은 실제 코드에 있고 민감하지 않은 경우에만 기록한다.
-- local·paper·live 환경 값과 계좌를 혼합하지 않는다.
-- execution schema search path는 실제 connection 설정과 문서가 일치하는지 확인한다.
-- `PORT_ACCOUNT_NO`는 `execution_config.py`에서 필수이며 미설정 시 fail-fast다. 코드 Fallback을 만들지 않는다.
-- `PORT_ACCOUNT_NO` 설정 변경 시 Runtime뿐 아니라 pytest·Container Smoke 같은 CI Harness 계약도 함께 확인한다.
-- CI Harness에는 실제 계좌번호가 아닌 test placeholder만 사용하고, 실제 계좌번호와 Secret 원문은 기록하지 않는다.
+- Base DB environment variables on the actual implementation of `db_config.py`.
+- Do not read or record the actual value of `INTEREST_DB_PASSWORD`.
+- Document compatibility environment variables such as `PORTFOLIO_DB_NAME` only after confirming actual code use.
+- Account number, broker, environment, strategy, and sizing keys may be documented by key name only.
+- Record default values only when they are in the actual code and are not sensitive.
+- Do not mix local·paper·live environment values and accounts.
+- Confirm that the execution schema search path matches between the actual connection settings and the documentation.
+- `PORT_ACCOUNT_NO` is required in `execution_config.py` and fails fast if unset. Do not create a code Fallback.
+- When changing the `PORT_ACCOUNT_NO` setting, confirm not only the Runtime but also CI Harness contracts such as pytest·Container Smoke together.
+- The CI Harness uses only a test placeholder rather than the actual account number, and does not record the actual account number and Secret verbatim.
 
-## 22. 외부 의존성
+## 22. External Dependencies
 
-- MarketConnector 모듈은 외부 의존성으로 취급한다.
-- connector 모듈 import path를 임의로 변경하지 않는다.
-- crawler holiday helper 의존성은 실제 import와 호출 위치를 확인한다.
-- 외부 모듈의 내부 책임을 Execution 문서에 복제하지 않는다.
-- `requirements.txt`와 실제 import가 다르면 누락·불필요 의존성을 보고한다.
-- 표준 라이브러리를 requirements에 추가하지 않는다.
+- Treat the MarketConnector module as an external dependency.
+- Do not arbitrarily change the connector module import path.
+- Confirm the actual import and call location of the crawler holiday helper dependency.
+- Do not duplicate the internal responsibility of external modules into the Execution documentation.
+- If `requirements.txt` and the actual imports differ, report the missing·unnecessary dependency.
+- Do not add standard library modules to requirements.
 
-## 23. 보안과 민감정보
+## 23. Security and Sensitive Information
 
-- `access_token.txt`는 민감정보 후보 파일이다.
-- 파일 값, token, API key, password, 계좌번호와 webhook URL을 읽거나 인용하지 않는다.
-- DB host, ARN, image URI, subnet, security group, broker order number와 connector order id는 문서에 원문으로 남기지 않는다.
-- 운영 식별자가 필요하면 `<EXECUTION_ECS_TASK>`, `<CONNECTOR_ORDER_ID>` 또는 `[REDACTED]`를 사용한다.
-- secret 값을 명령에 직접 넣지 않는다.
-- 사용자가 이미 설정한 환경변수 또는 local secret loader를 사용한다.
-- password 값을 사용자에게 다시 입력하라고 요구하지 않는다.
+- `access_token.txt` is a sensitive-information candidate file.
+- Do not read or quote the file value, token, API key, password, account number, and webhook URL.
+- Do not leave DB host, ARN, image URI, subnet, security group, broker order number, and connector order id verbatim in documentation.
+- When an operational identifier is needed, use `<EXECUTION_ECS_TASK>`, `<CONNECTOR_ORDER_ID>`, or `[REDACTED]`.
+- Do not put secret values directly in commands.
+- Use environment variables already set by the user or a local secret loader.
+- Do not ask the user to re-enter the password value.
 
-Runtime Token 파일은 아래를 지킨다.
+For Runtime Token files, adhere to the following.
 
-- Runtime Token 파일은 Git과 Docker Image에서 제외한다.
-- Token 파일 존재 여부만 확인하고 값은 읽지 않는다.
-- Build Context와 Image Layer 포함 여부를 검증한다.
-- 문서와 로그에 실제 값이나 부분 문자열을 기록하지 않는다.
+- Exclude Runtime Token files from Git and the Docker Image.
+- Confirm only the existence of the Token file and do not read the value.
+- Verify inclusion in the Build Context and Image Layer.
+- Do not record the actual value or partial strings in documents and logs.
 
-## 24. 소스 수정 규칙
+## 24. Source Modification Rules
 
-- 원본 Python 파일을 무차별 문자열 치환하지 않는다.
-- 지정된 파일만 국소 수정한다.
-- 함수 signature, return shape와 exception 계약을 먼저 확인한다.
-- import 순환과 module side effect를 확인한다.
-- DB write, connector 호출과 상태 전이 순서를 보존한다.
-- status 문자열과 reason code를 임의로 바꾸지 않는다.
-- 새로운 retry를 추가할 때 중복 주문 위험을 먼저 분석한다.
-- log에 민감정보와 전체 payload를 출력하지 않는다.
-- 주석은 구현을 그대로 설명하고 미래 계획을 현재 기능처럼 쓰지 않는다.
+- Do not indiscriminately string-replace the original Python files.
+- Make localized changes to only the specified files.
+- Confirm the function signature, return shape, and exception contract first.
+- Confirm import cycles and module side effects.
+- Preserve the order of DB writes, connector calls, and status transitions.
+- Do not arbitrarily change status strings and reason codes.
+- When adding a new retry, first analyze the duplicate-order risk.
+- Do not output sensitive information and full payloads in logs.
+- Comments describe the implementation as-is and do not present future plans as current features.
 
-## 25. 테스트와 검증
+## 25. Testing and Validation
 
-코드 수정 시 실제 주문이나 DB write 없이 가능한 검증을 우선한다.
+For code changes, prioritize validation possible without actual orders or DB writes.
 
 - `python -m py_compile <file>`
-- side effect 없는 순수 함수 단위 테스트
-- fixture와 mock 기반 테스트
-- 정적 import 경로 확인
-- 상태 전이와 idempotency 테스트
-- partial fill과 duplicate fill 테스트
-- 0주, 음수, 최소 금액과 경계값 테스트
-- transaction rollback 테스트
+- Side-effect-free pure function unit tests
+- fixture and mock based tests
+- static import path confirmation
+- status transition and idempotency tests
+- partial fill and duplicate fill tests
+- 0-share, negative, minimum amount, and boundary-value tests
+- transaction rollback tests
 
-다음 검증은 명시 승인 없이 실행하지 않는다.
+The following validations are not run without explicit approval.
 
-- 실제 connector BUY·SELL
-- 실제 broker 주문
-- 실제 fill 조회와 sync
-- 실제 position sync
-- 실제 intraday quote와 monitor
-- 실제 DB write
-- 실제 AWS·SSM·ECS·Step Functions 실행
+- actual connector BUY·SELL
+- actual broker orders
+- actual fill query and sync
+- actual position sync
+- actual intraday quote and monitor
+- actual DB write
+- actual AWS·SSM·ECS·Step Functions execution
 
-실행하지 못한 검증을 통과했다고 기록하지 않는다.
+Do not record a validation that could not be run as passed.
 
-### 25.1 Progressive Release 순서
+### 25.1 Progressive Release Order
 
-Container 배포 검증은 아래 순서를 기본으로 한다.
+Container deployment validation uses the following order by default.
 
-| 단계 | 내용 |
+| Stage | Content |
 |---|---|
 | 1 | Source·Unit Test |
 | 2 | Build-only |
-| 3 | Git SHA Image와 Digest 확인 |
+| 3 | Git SHA Image and Digest confirmation |
 | 4 | Candidate Compile-only |
 | 5 | Runtime Source·Import Contract |
-| 6 | 주문 미호출 Dry-run |
-| 7 | 기존 데이터 기반 제한된 Sync·Validator |
-| 8 | 운영 State Machine 승격 |
-| 9 | 이전 Revision Rollback |
-| 10 | 검증된 Revision 재승격 |
+| 6 | Order-free Dry-run |
+| 7 | Limited Sync·Validator based on existing data |
+| 8 | Operational State Machine promotion |
+| 9 | Previous Revision Rollback |
+| 10 | Validated Revision re-promotion |
 
-앞 단계 성공을 뒤 단계 성공으로 간주하지 않는다.
+Do not treat the success of an earlier stage as the success of a later stage.
 
-## 26. 문서 체계
+## 26. Documentation System
 
-| 문서 | 역할 |
+| Document | Role |
 |---|---|
-| `AGENTS.md` | Execution 작업·상태·데이터·안전 규칙 |
-| `README.md` | 현재 구조와 운영 AS-IS |
-| `CHANGELOG.md` | 실제 변경 이력과 당시 사실 |
-| `docs/source-file-catalog.md` | 파일 책임, 입출력과 변경 영향 |
+| `AGENTS.md` | Execution work·status·data·safety rules |
+| `README.md` | Current structure and operational AS-IS |
+| `CHANGELOG.md` | Actual change history and facts at the time |
+| `docs/source-file-catalog.md` | File responsibilities, input/output, and change impact |
 
-- 날짜별 `docs/worklog/*.md`를 새로 만들지 않는다.
-- 삭제된 worklog 디렉터리나 파일을 현재 구조에 다시 추가하지 않는다.
-- 과거 CHANGELOG에 기록된 worklog 생성 사실은 당시 이력이므로 삭제하지 않는다.
-- 새 문서는 사용자가 명시한 경우에만 만든다.
+- Do not create new date-specific `docs/worklog/*.md`.
+- Do not re-add deleted worklog directories or files to the current structure.
+- Do not delete worklog-creation facts recorded in the past CHANGELOG, as they are history at the time.
+- Create new documents only when the user specifies.
 
-## 27. 문서 갱신 조건
+## 27. Documentation Update Conditions
 
 ### 27.1 README.md
 
-아래가 바뀌면 관련 섹션만 갱신한다.
+Update only the related sections when the following change.
 
-- 프로젝트 책임 경계
-- Daily Step의 Execution 역할
-- entrypoint와 실행 흐름
-- Plan·Order·Fill·Position 계약
-- 설정과 외부 의존성
-- 현재 파일 구조
-- 운영 안전 기준
+- Project responsibility boundary
+- The Execution role in the Daily Step
+- entrypoint and execution flow
+- Plan·Order·Fill·Position contracts
+- Configuration and external dependencies
+- Current file structure
+- Operational safety criteria
 
 ### 27.2 CHANGELOG.md
 
-- 실제 변경된 파일과 내용을 기록한다.
-- 문서 변경과 기능 변경을 구분한다.
-- 실제 실행 여부를 구분한다.
-- 과거 이력을 현재 상태에 맞추기 위해 왜곡하지 않는다.
-- 일회성 로그, command id와 전체 DB 결과를 넣지 않는다.
+- Record the actually changed files and content.
+- Distinguish documentation changes from functional changes.
+- Distinguish whether execution actually occurred.
+- Do not distort past history to match the current state.
+- Do not include one-time logs, command id, and full DB results.
 
 ### 27.3 docs/source-file-catalog.md
 
-아래가 바뀌면 같은 작업에서 반드시 갱신 여부를 확인한다.
+When the following change, always confirm whether to update it in the same task.
 
-- 파일 추가·삭제·이름 변경
-- entrypoint 책임 변경
-- builder·sizing·repository 역할 변경
-- DB read·write 대상 변경
-- connector 호출 경로 변경
-- status 전이 변경
-- fill·position sync 책임 변경
-- intraday monitor 책임 변경
-- Dockerfile, requirements와 wrapper 변경
-- 문서 파일 구조 변경
+- File creation·deletion·rename
+- entrypoint responsibility change
+- builder·sizing·repository role change
+- DB read·write target change
+- connector call path change
+- status transition change
+- fill·position sync responsibility change
+- intraday monitor responsibility change
+- Dockerfile, requirements, and wrapper changes
+- documentation file structure change
 
-변경 영향이 없으면 불필요하게 수정하지 않고 완료 보고에 `갱신 불필요`로 기록한다.
+If there is no change impact, do not modify it unnecessarily and record `Update not required` in the completion report.
 
-## 28. 파일 삭제와 정리
+## 28. File Deletion and Cleanup
 
-파일을 삭제하거나 legacy로 분류하기 전에 아래를 확인한다.
+Before deleting a file or classifying it as legacy, confirm the following.
 
-- import 또는 dynamic import
-- root entrypoint 호출
-- Docker CMD 또는 command override
-- ECS·Batch·Step Functions·Scheduler 호출
+- import or dynamic import
+- root entrypoint call
+- Docker CMD or command override
+- ECS·Batch·Step Functions·Scheduler calls
 - PowerShell·BAT·CMD·Shell wrapper
-- 테스트와 fixture 참조
-- DB output과 report 소비
-- 문서 링크
-- 외부 MS 호출
+- test and fixture references
+- DB output and report consumption
+- documentation links
+- external MS calls
 
-근거가 부족하면 `정리 후보`로만 기록하고 삭제하지 않는다.
+If evidence is insufficient, record it only as a `cleanup candidate` and do not delete it.
 
-## 29. Git 규칙
+## 29. Git Rules
 
-- 작업 전후 `git status --short`로 변경 범위를 확인한다.
-- 작업 후 `git diff --stat`와 `git diff --check`를 확인한다.
-- 사용자 변경을 되돌리지 않는다.
-- 명시 요청 없이 `git add`, `commit`, `push`하지 않는다.
-- 명시 요청 없이 `reset`, `restore`, `checkout`하지 않는다.
-- repository가 제공되지 않은 첨부 파일 작업에서는 Git 검증을 수행한 것처럼 기록하지 않는다.
+- Before and after work, confirm the change scope with `git status --short`.
+- After work, confirm `git diff --stat` and `git diff --check`.
+- Do not revert user changes.
+- Do not `git add`, `commit`, `push` without an explicit request.
+- Do not `reset`, `restore`, `checkout` without an explicit request.
+- For attached-file work where no repository is provided, do not record as if Git validation was performed.
 
-## 30. DevOps CI와 State Machine 작업 규칙
+## 30. DevOps CI and State Machine Work Rules
 
-현재 Execution은 main Push 기반 Automatic no-order Release로 구성된다.
-아래 책임 경계를 유지한다.
+Execution is currently configured as a main Push based Automatic no-order Release.
+Maintain the following responsibility boundaries.
 
-- CI 경로는 GitHub Actions → OIDC → Execution 전용 CodeBuild다.
-- CodeBuild는 Build·Test·Container Smoke·ECR Artifact 생성 책임만 갖는다.
-- GitHub Workflow는 Release control-plane 책임을 가질 수 있다.
-- Release control-plane의 State Machine Definition update와 State Machine 실행은 전혀 다른 작업이다.
-- Build·Release Build 성공을 운영 주문 실행 성공으로 간주하지 않는다.
+- The CI path is GitHub Actions → OIDC → Execution-dedicated CodeBuild.
+- CodeBuild has only the Build·Test·Container Smoke·ECR Artifact creation responsibility.
+- The GitHub Workflow may hold the Release control-plane responsibility.
+- The Release control-plane's State Machine Definition update and State Machine execution are entirely different tasks.
+- Do not treat Build·Release Build success as operational order execution success.
 
-Automatic Release가 가능하더라도 아래는 Release Pipeline에서 수행하지 않는다.
+Even when Automatic Release is possible, the following are not performed in the Release Pipeline.
 
-- 주문 실행과 Broker·KIS 호출
-- DB DML과 DB Write
+- Order execution and Broker·KIS calls
+- DB DML and DB Write
 - `ecs:RunTask`
 - `states:StartExecution`
 - `ssm:SendCommand`
 
-State Machine Definition 참조 작업 시 아래를 지킨다.
+When working on State Machine Definition references, adhere to the following.
 
-- 승격 전 Live Definition을 백업한다.
-- 대상 Task Definition 참조 수와 State 이름을 확인한다.
-- Stale Promotion Guard로 기준선 변경을 확인한다.
-- 변경 전후 참조 개수를 확인한다.
-- Rollback Definition을 별도로 보존하고 실패 시 자동 Rollback 경로를 유지한다.
-- Release 과정에서 State Machine 자체를 실행하지 않는다.
-- Definition Promotion과 실제 Daily 주문 실행은 서로 다른 영향으로 구분한다.
+- Back up the Live Definition before promotion.
+- Confirm the target Task Definition reference count and State names.
+- Confirm baseline changes with a Stale Promotion Guard.
+- Confirm the reference count before and after the change.
+- Preserve the Rollback Definition separately and maintain an automatic Rollback path on failure.
+- Do not execute the State Machine itself during the Release process.
+- Distinguish Definition Promotion from actual Daily order execution as different impacts.
 
-DevOps Architecture, IAM 상세 정책, 전체 Promotion/Rollback 설계와 공통 Release 전략은
-이 문서에 복제하지 않고 `port-devops` Repository에서 관리한다.
+DevOps Architecture, detailed IAM policy, the full Promotion/Rollback design, and the common Release strategy
+are not duplicated in this document and are managed in the `port-devops` Repository.
 
-Kiro 문서 작업에서는 아래를 지킨다.
+In Kiro documentation work, adhere to the following.
 
-- 이번에 수행된 AWS·DB·ECS 검증을 다시 실행하지 않는다.
-- 제공된 검증 결과를 문서화 근거로만 사용한다.
-- 정적 파일 확인만 수행한다.
-- 문서 갱신 중 State Machine·ECS·DB·주문을 실행하지 않는다.
+- Do not re-run the AWS·DB·ECS validations performed this time.
+- Use the provided validation results only as documentation evidence.
+- Perform only static file confirmation.
+- Do not execute State Machine·ECS·DB·orders during documentation updates.
 
-## 31. 완료 전 정합성 점검
+## 31. Consistency Check Before Completion
 
-문서 또는 코드 수정 후 관련 범위에서 아래를 확인한다.
+After a document or code change, confirm the following within the related scope.
 
-- Execution 책임 경계
-- Daily Step 8~17 표현
-- BUY·SELL 후보 생성 입력
-- Plan과 Order 상태
-- 중복 Order 방지
-- connector request 연결
-- Auto Execute 승인·환경 경계
-- partial fill과 FILLED 판정
-- BUY position 생성과 병합
-- SELL remaining quantity 차감
-- intraday check 저장과 order 생성 분리
-- backtest 후보와 Daily 후보 분리
+- Execution responsibility boundary
+- Daily Step 8~17 representation
+- BUY·SELL candidate creation input
+- Plan and Order status
+- Duplicate Order prevention
+- connector request link
+- Auto Execute approval·environment boundary
+- partial fill and FILLED judgment
+- BUY position creation and merge
+- SELL remaining quantity deduction
+- separation of intraday check storage and order creation
+- separation of backtest candidates and Daily candidates
 - DB schema·search path
-- 환경변수 실제 사용 여부
-- requirements와 import
-- 파일 구조와 문서 링크
-- source-file-catalog 갱신 여부
-- worklog 신규 생성 지시 유무
-- 과거 CHANGELOG 역사 보존
-- 민감정보 원문 신규 기록 여부
-- 300자 초과 신규 셀
-- 500자 초과 신규 라인
+- whether environment variables are actually used
+- requirements and imports
+- file structure and documentation links
+- whether source-file-catalog needs updating
+- whether a new worklog is instructed
+- preservation of past CHANGELOG history
+- whether sensitive information is newly recorded verbatim
+- new cells over 300 characters
+- new lines over 500 characters
 - UTF-8 No BOM
-- 탭과 후행 공백
+- tabs and trailing whitespace
 
-## 32. 완료 보고
+## 32. Completion Report
 
-완료 보고는 2컬럼 표 중심으로 짧게 작성한다.
+Write the completion report concisely, centered on two-column tables.
 
-| 항목 | 보고 내용 |
+| Item | Report content |
 |---|---|
-| 변경 파일 | 실제 수정 파일 |
-| 변경 요약 | 책임·계약·구조 변경 |
-| 정적 검증 | 수행한 검증과 결과 |
-| 실행 검증 | 수행 여부와 미수행 이유 |
-| 문서 정합 | README·CHANGELOG·Catalog 갱신 여부 |
-| 민감정보 | 원문 기록 여부 |
-| 남은 위험 | 실제 코드·운영 대조 필요 항목 |
+| Changed files | Actually modified files |
+| Change summary | Responsibility·contract·structure changes |
+| Static validation | Validations performed and results |
+| Execution validation | Whether performed and the reason for not performing |
+| Documentation consistency | Whether README·CHANGELOG·Catalog were updated |
+| Sensitive information | Whether recorded verbatim |
+| Remaining risk | Items requiring comparison with the actual code·operations |
 
-- 문서 작업만 수행했다면 실제 주문·DB·AWS 실행은 0건이어야 한다.
-- 미수행 검증을 성공으로 기록하지 않는다.
-- 불명확한 구현 사실은 `미검증`으로 남긴다.
+- If only documentation work was performed, actual order·DB·AWS execution must be 0.
+- Do not record an unexecuted validation as a success.
+- Leave unclear implementation facts as `Unverified`.

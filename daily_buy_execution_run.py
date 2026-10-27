@@ -1,9 +1,7 @@
-# C:\Workspaces\port_strategy_execution\daily_buy_execution_run.py
-
 """
-Daily BUY signal을 기반으로 실행 주문 후보를 생성하는 배치 entrypoint.
-계좌/잔고, 최신 daily run, BUY signal을 DB에서 읽고 strategy_execution_order를 저장할 수 있다.
-실행 시 DB write가 발생하므로 명시 승인 없이 실행하지 않는다.
+Batch entrypoint that generates execution order candidates based on the Daily BUY signal.
+It can read the account/balance, latest daily run, and BUY signals from the DB and store strategy_execution_order.
+Because DB writes occur on execution, do not run it without explicit approval.
 """
 
 import sys
@@ -22,6 +20,7 @@ from execution_repository import (
     mark_plan_no_candidate,
 )
 from execution_daily_signal_builder import build_daily_signal_execution_orders
+from execution_locale import t
 
 
 def print_header(title):
@@ -35,9 +34,9 @@ def print_header(title):
 # -------------------------------------------------
 def _load_kr_holiday_checker():
     """
-    port-interest-crawler / port_interest_crawler 쪽의 interest_get_holidays.py를
-    사용할 수 있으면 한국 휴장일/공휴일 판정을 함께 사용한다.
-    없으면 주말 판정만 수행한다.
+    If interest_get_holidays.py from port-interest-crawler / port_interest_crawler
+    is available, use the Korean market-closure/public-holiday check as well.
+    Otherwise, perform only the weekend check.
     """
     candidate_paths = [
         Path(r"C:\Workspaces\port-interest-crawler"),
@@ -70,7 +69,7 @@ def is_kr_business_day(target_date=None):
             if holiday_checker(target_date, "KR"):
                 return False, "KR_HOLIDAY"
         except Exception:
-            # 휴일 유틸 오류 때문에 배치를 죽이지는 않고, 주말 판정만 신뢰한다.
+            # Do not kill the batch due to a holiday-utility error; trust only the weekend check.
             pass
 
     return True, "BUSINESS_DAY"
@@ -86,8 +85,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -102,23 +101,23 @@ def main():
 
     try:
         # -------------------------------------------------
-        # 1. Connector 계좌 / 잔고 조회
+        # 1. Query the Connector account / balance
         # -------------------------------------------------
         account = get_account(conn)
         balance = get_latest_balance(conn, account["id"])
 
         # -------------------------------------------------
-        # 2. 최신 Daily Signal Run 조회
+        # 2. Query the latest Daily Signal Run
         # -------------------------------------------------
         daily_run = get_latest_daily_run(conn)
 
         # -------------------------------------------------
-        # 3. Daily BUY Signal 조회
+        # 3. Query the Daily BUY Signal
         # -------------------------------------------------
         daily_signals = get_daily_buy_signals(conn, daily_run["id"])
 
         # -------------------------------------------------
-        # 4. Execution Plan 생성/갱신
+        # 4. Create/update the Execution Plan
         # -------------------------------------------------
         plan_id = create_or_get_daily_signal_plan(
             conn=conn,
@@ -128,7 +127,7 @@ def main():
         )
 
         # -------------------------------------------------
-        # 5. Execution Order 후보 생성
+        # 5. Build Execution Order candidates
         # -------------------------------------------------
         order_data_list = build_daily_signal_execution_orders(
             conn=conn,
@@ -154,10 +153,10 @@ def main():
 
         if not order_data_list:
             print()
-            print("[WARN] 생성할 Daily Signal execution order 후보가 없음")
+            print(t("[WARN] No Daily Signal execution order candidate to create", "[WARN] 생성할 Daily Signal execution order 후보가 없음"))
 
         # -------------------------------------------------
-        # 6. Execution Order DB 저장
+        # 6. Store Execution Orders in the DB
         # -------------------------------------------------
         saved_rows = []
 
@@ -195,7 +194,7 @@ def main():
                 )
 
         # -------------------------------------------------
-        # 7. Plan Summary 갱신
+        # 7. Update the Plan Summary
         # -------------------------------------------------
         if order_data_list:
             summary = update_plan_summary(conn, plan_id)
@@ -214,10 +213,10 @@ def main():
             print(f"skipped_orders   : {summary['skipped_order_count']}")
             print(f"target_amount    : {summary['total_target_amount']}")
         else:
-            print("[WARN] plan summary 없음")
+            print(t("[WARN] No plan summary", "[WARN] plan summary 없음"))
 
         print_header("[DONE]")
-        print("Daily Signal execution candidate build 완료")
+        print(t("Daily Signal execution candidate build complete", "Daily Signal execution candidate build 완료"))
 
     except Exception as e:
         conn.rollback()

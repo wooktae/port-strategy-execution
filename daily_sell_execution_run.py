@@ -1,9 +1,7 @@
-# C:\Workspaces\port_strategy_execution\daily_sell_execution_run.py
-
 """
-Daily position decision의 SELL 대상을 실행 주문 후보로 변환하는 배치 entrypoint.
-decision row와 execution order를 연결하고 plan 요약을 갱신할 수 있다.
-실행 시 DB write가 발생하므로 정적 분석 목적에서는 실행하지 않는다.
+Batch entrypoint that converts the SELL targets of the daily position decision into execution order candidates.
+It can link decision rows with execution orders and update the plan summary.
+Because DB writes occur on execution, do not run it for static-analysis purposes.
 """
 
 import sys
@@ -24,6 +22,7 @@ from execution_repository import (
     update_plan_summary,
 )
 from execution_daily_position_sell_builder import build_daily_position_sell_execution_orders
+from execution_locale import t
 
 
 def print_header(title):
@@ -37,9 +36,9 @@ def print_header(title):
 # -------------------------------------------------
 def _load_kr_holiday_checker():
     """
-    port-interest-crawler / port_interest_crawler 쪽의 interest_get_holidays.py를
-    사용할 수 있으면 한국 휴장일/공휴일 판정을 함께 사용한다.
-    없으면 주말 판정만 수행한다.
+    If interest_get_holidays.py from port-interest-crawler / port_interest_crawler
+    is available, use the Korean market-closure/public-holiday check as well.
+    Otherwise, perform only the weekend check.
     """
     candidate_paths = [
         Path(r"C:\Workspaces\port-interest-crawler"),
@@ -72,7 +71,7 @@ def is_kr_business_day(target_date=None):
             if holiday_checker(target_date, "KR"):
                 return False, "KR_HOLIDAY"
         except Exception:
-            # 휴일 유틸 오류 때문에 배치를 죽이지는 않고, 주말 판정만 신뢰한다.
+            # Do not kill the batch due to a holiday-utility error; trust only the weekend check.
             pass
 
     return True, "BUSINESS_DAY"
@@ -88,8 +87,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -97,8 +96,8 @@ def print_non_business_day_no_target(step_name):
 
 def get_execution_plan_summary(conn, plan_id):
     """
-    update_plan_summary()가 order 0건인 plan에서 None을 반환할 수 있으므로,
-    로그 출력용 fallback summary를 직접 조회한다.
+    Because update_plan_summary() may return None for a plan with 0 orders,
+    query a fallback summary directly for log output.
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -124,8 +123,8 @@ def get_execution_plan_summary(conn, plan_id):
 
 def resolve_plan_summary(conn, plan_id):
     """
-    1차: update_plan_summary()로 실제 order 기준 summary 재계산
-    2차: summary가 None이면 strategy_execution_plan row를 직접 조회
+    Step 1: Recompute the summary based on actual orders via update_plan_summary()
+    Step 2: If the summary is None, query the strategy_execution_plan row directly
     """
     summary = update_plan_summary(conn, plan_id)
 
@@ -144,20 +143,20 @@ def main():
 
     try:
         # -------------------------------------------------
-        # 1. Connector 계좌 / 최신 잔고 조회
+        # 1. Query the Connector account / latest balance
         # -------------------------------------------------
         account = get_account(conn)
         balance = get_latest_balance(conn, account["id"])
 
         # -------------------------------------------------
-        # 2. 최신 Daily Run 조회
-        #    - Daily Position 판단 기준이 되는 최신 run
+        # 2. Query the latest Daily Run
+        #    - The latest run used as the Daily Position decision basis
         # -------------------------------------------------
         daily_run = get_latest_daily_run_for_position_decision(conn)
 
         # -------------------------------------------------
-        # 3. SELL 실행 후보가 되는 Daily Position Decision 조회
-        #    - 보통 SELL / READY 상태 decision만 대상
+        # 3. Query the Daily Position Decisions that become SELL execution candidates
+        #    - Usually only decisions in SELL / READY status are targeted
         # -------------------------------------------------
         sell_decisions = get_ready_daily_position_sell_decisions(
             conn=conn,
@@ -165,8 +164,8 @@ def main():
         )
 
         # -------------------------------------------------
-        # 4. Daily Signal Plan 생성 또는 재사용
-        #    - BUY/SELL Daily 실행을 같은 날짜 plan으로 묶기 위함
+        # 4. Create or reuse the Daily Signal Plan
+        #    - To group BUY/SELL Daily executions under the same-date plan
         # -------------------------------------------------
         plan_id = create_or_get_daily_signal_plan(
             conn=conn,
@@ -176,7 +175,7 @@ def main():
         )
 
         # -------------------------------------------------
-        # 5. SELL Execution Order 후보 생성
+        # 5. Build SELL Execution Order candidates
         # -------------------------------------------------
         order_data_list = build_daily_position_sell_execution_orders(
             plan_id=plan_id,
@@ -198,11 +197,11 @@ def main():
 
         if not order_data_list:
             print()
-            print("[INFO] 생성할 Daily Position SELL execution order 후보가 없음")
-            print("       SELL decision이 없거나, 전략 포지션 OPEN 대상이 없는 상태일 수 있음")
+            print(t("[INFO] No Daily Position SELL execution order candidate to create", "[INFO] 생성할 Daily Position SELL execution order 후보가 없음"))
+            print(t("       There may be no SELL decision, or no OPEN strategy position target", "       SELL decision이 없거나, 전략 포지션 OPEN 대상이 없는 상태일 수 있음"))
 
         # -------------------------------------------------
-        # 6. Execution Order 저장 + Daily Position Decision 링크 갱신
+        # 6. Store Execution Orders + update the Daily Position Decision link
         # -------------------------------------------------
         saved_rows = []
 
@@ -231,8 +230,8 @@ def main():
             )
 
         # -------------------------------------------------
-        # 7. Plan Summary 갱신 / 조회
-        #    - order 0건이어도 plan summary를 출력해야 하므로 fallback 조회
+        # 7. Update / query the Plan Summary
+        #    - Fallback query, since the plan summary must be printed even with 0 orders
         # -------------------------------------------------
         summary = resolve_plan_summary(conn, plan_id)
 
@@ -248,10 +247,10 @@ def main():
             print(f"skipped_orders   : {summary['skipped_order_count']}")
             print(f"target_amount    : {summary['total_target_amount']}")
         else:
-            print("[WARN] plan summary 없음")
+            print(t("[WARN] No plan summary", "[WARN] plan summary 없음"))
 
         print_header("[DONE]")
-        print("Daily Position SELL execution build 완료")
+        print(t("Daily Position SELL execution build complete", "Daily Position SELL execution build 완료"))
 
     except Exception as e:
         conn.rollback()

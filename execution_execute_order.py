@@ -1,7 +1,7 @@
 """
-단일 strategy_execution_order를 지정해 수동으로 connector 주문을 실행하는 entrypoint.
-execution mode 검증, connector BUY/SELL 호출, 주문 결과 DB 반영 경로가 있다.
---execute 사용 여부와 관계없이 일부 DB update가 가능하므로 승인 없이 실행하지 않는다.
+Entrypoint that manually executes a connector order for a single specified strategy_execution_order.
+It has paths for execution mode validation, connector BUY/SELL calls, and reflecting the order result in the DB.
+Some DB updates are possible regardless of whether --execute is used, so it is not run without approval.
 """
 
 import argparse
@@ -17,6 +17,7 @@ from execution_repository import (
     mark_execution_order_execute_failed,
     mark_position_sell_ordered,
 )
+from execution_locale import t
 
 # -------------------------------------------------
 # Market Connector import path
@@ -35,7 +36,7 @@ except ModuleNotFoundError as e:
     print("[IMPORT ERROR]")
     print(f"CONNECTOR_PATH = {CONNECTOR_PATH}")
     print(f"sys.path[0]    = {sys.path[0]}")
-    print("connector_buy.py / connector_sell.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요")
+    print(t("Check that connector_buy.py / connector_sell.py exist under C:\\Workspaces\\port-marketconnector", "connector_buy.py / connector_sell.py 파일이 C:\\Workspaces\\port-marketconnector 아래에 있는지 확인 필요"))
     raise e
 
 
@@ -126,9 +127,9 @@ def to_float_or_none(value):
 
 def resolve_execution_mode(order, requested_execution_mode):
     """
-    CLI에서 execution_mode를 받으면 그 값을 우선 사용.
-    없으면 DB에 저장된 execution_mode 사용.
-    DB에도 없으면 DRY_RUN으로 처리.
+    If an execution_mode is provided on the CLI, that value takes priority.
+    Otherwise, use the execution_mode stored in the DB.
+    If it is not in the DB either, treat it as DRY_RUN.
     """
 
     execution_mode = requested_execution_mode or order.get("execution_mode") or EXECUTION_MODE_DRY_RUN
@@ -141,13 +142,13 @@ def resolve_execution_mode(order, requested_execution_mode):
 
 def build_sizing_policy(order, execution_mode):
     """
-    전략 수량(order_qty)을 실제 connector 전송 수량(executed_order_qty)으로 변환.
+    Converts the strategy quantity (order_qty) into the actual connector submission quantity (executed_order_qty).
 
-    핵심:
-    - DRY_RUN: 실제 전송 없음
-    - MANUAL_TEST: 기존처럼 최대 1주만 전송
-    - PAPER_STRATEGY: 전략 수량 그대로 paper 전송
-    - LIVE_STRATEGY: 전략 수량 그대로 live 전송
+    Key points:
+    - DRY_RUN: no actual submission
+    - MANUAL_TEST: submit at most 1 share, as before
+    - PAPER_STRATEGY: submit the strategy quantity as-is to paper
+    - LIVE_STRATEGY: submit the strategy quantity as-is to live
     """
 
     strategy_order_qty = to_int(order.get("order_qty"), 0)
@@ -324,12 +325,12 @@ def build_result_payload(order, execution_mode, sizing_policy, connector_result=
         "request_type": order["action_type"],
         "execution_mode": execution_mode,
 
-        # 핵심 추적 필드
+        # Key tracking fields
         "strategy_order_qty": sizing_policy["strategy_order_qty"],
         "executed_order_qty": sizing_policy["executed_order_qty"],
         "sizing_policy": sizing_policy["sizing_policy"],
 
-        # 기존 추적 호환용
+        # For backward compatibility with existing tracking
         "manual_test_qty": (
             sizing_policy["executed_order_qty"]
             if execution_mode == EXECUTION_MODE_MANUAL_TEST
@@ -339,7 +340,7 @@ def build_result_payload(order, execution_mode, sizing_policy, connector_result=
         "manual_test_max_qty": sizing_policy["manual_test_max_qty"],
         "is_connector_executable": sizing_policy["is_connector_executable"],
 
-        # 주문 컨텍스트
+        # Order context
         "source_type": order.get("source_type"),
         "source_run_id": str(order["source_run_id"]) if order.get("source_run_id") else None,
         "source_trade_log_id": order.get("source_trade_log_id"),
@@ -368,8 +369,8 @@ def build_result_payload(order, execution_mode, sizing_policy, connector_result=
 
 def execute_connector_order(order, sizing_policy):
     """
-    action_type에 따라 connector BUY 또는 SELL API를 호출한다.
-    실제 주문 요청으로 이어지는 함수이므로 검증/문서화 작업에서는 호출하지 않는다.
+    Calls the connector BUY or SELL API depending on action_type.
+    This function leads to an actual order request, so it is not called during validation/documentation work.
     """
     action_type = order["action_type"]
     executed_order_qty = sizing_policy["executed_order_qty"]
@@ -402,7 +403,7 @@ def main():
 
     try:
         # -------------------------------------------------
-        # 1. Execution Order 조회
+        # 1. Query the Execution Order
         # -------------------------------------------------
         order = get_execution_order_for_execute(
             conn,
@@ -410,7 +411,7 @@ def main():
         )
 
         # -------------------------------------------------
-        # 2. 실행 모드 / 수량 정책 결정
+        # 2. Determine the execution mode / quantity policy
         # -------------------------------------------------
         execution_mode = resolve_execution_mode(
             order=order,
@@ -429,7 +430,7 @@ def main():
         )
 
         # -------------------------------------------------
-        # 3. 검증
+        # 3. Validation
         # -------------------------------------------------
         reasons = validate_for_execution(
             order=order,
@@ -447,7 +448,7 @@ def main():
             return
 
         # -------------------------------------------------
-        # 4. execution_mode 명시적 저장
+        # 4. Explicitly store the execution_mode
         # -------------------------------------------------
         updated = mark_execution_order_execution_mode(
             conn=conn,
@@ -463,21 +464,21 @@ def main():
         print(f"connector_order_id : {updated['connector_order_request_id']}")
 
         # -------------------------------------------------
-        # 5. 검증만 수행
+        # 5. Validation only
         # -------------------------------------------------
         if not args.execute:
             print()
-            print("검증 및 execution_mode 설정 완료. 실제 주문 실행은 --execute 필요.")
+            print(t("Validation and execution_mode setup complete. Actual order execution requires --execute.", "검증 및 execution_mode 설정 완료. 실제 주문 실행은 --execute 필요."))
             print()
             print("[Mode Summary]")
-            print("- DRY_RUN        : Connector 주문 없음")
-            print("- MANUAL_TEST    : paper 1주 제한 주문")
-            print("- PAPER_STRATEGY : paper 전략 수량 주문")
-            print("- LIVE_STRATEGY  : live 전략 수량 주문, --confirm-live 필요")
+            print(t("- DRY_RUN        : No Connector order", "- DRY_RUN        : Connector 주문 없음"))
+            print(t("- MANUAL_TEST    : paper 1-share limited order", "- MANUAL_TEST    : paper 1주 제한 주문"))
+            print(t("- PAPER_STRATEGY : paper strategy-quantity order", "- PAPER_STRATEGY : paper 전략 수량 주문"))
+            print(t("- LIVE_STRATEGY  : live strategy-quantity order, --confirm-live required", "- LIVE_STRATEGY  : live 전략 수량 주문, --confirm-live 필요"))
             return
 
         # -------------------------------------------------
-        # 6. Connector 실제 주문 호출
+        # 6. Actual Connector order call
         # -------------------------------------------------
         result = execute_connector_order(
             order=order,
@@ -487,7 +488,7 @@ def main():
         conn.close()
 
         # -------------------------------------------------
-        # 7. Connector 결과 저장
+        # 7. Store the Connector result
         # -------------------------------------------------
         conn = get_conn()
         conn.autocommit = False

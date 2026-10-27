@@ -60,8 +60,8 @@ TERMINAL_REQUEST_STATUSES = {
 
 def _dict_cursor(conn):
     """
-    execution_db.get_conn()이 psycopg3 또는 psycopg2 connection을 반환해도
-    dict 형태 row를 동일하게 받을 수 있도록 cursor를 생성한다.
+    Creates a cursor so that dict-shaped rows can be received consistently,
+    whether execution_db.get_conn() returns a psycopg3 or a psycopg2 connection.
     """
     if _psycopg3_dict_row is not None:
         try:
@@ -447,7 +447,7 @@ def _validate_order(
     )
 
     # -------------------------------------------------
-    # 1. 정상 취소 체인
+    # 1. Normal cancellation chain
     # -------------------------------------------------
     if execution_status in CANCELED_ORDER_STATUSES:
         if request_status not in CANCELED_REQUEST_STATUSES:
@@ -499,7 +499,7 @@ def _validate_order(
         return errors
 
     # -------------------------------------------------
-    # 2. 정상 체결 체인
+    # 2. Normal fill chain
     # -------------------------------------------------
     if request_status in ACTIVE_REQUEST_STATUSES:
         _add_error(

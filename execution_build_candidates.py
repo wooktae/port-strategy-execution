@@ -1,10 +1,8 @@
 import os
-# C:\Workspaces\port_strategy_execution\execution_build_candidates.py
-
 """
-legacy 성격의 독립형 execution 후보 생성 스크립트.
-daily signal과 connector 계좌/잔고 정보를 직접 조회하고 plan/order upsert를 수행할 수 있다.
-DB write 경로와 로컬 설정 상수가 포함되어 있어 정리 후보로 취급하고 실행하지 않는다.
+Standalone execution-candidate generation script of a legacy nature.
+It can directly query daily signals and connector account/balance information and perform plan/order upserts.
+It contains DB write paths and local configuration constants, so it is treated as a cleanup candidate and is not run.
 """
 
 import json
@@ -31,7 +29,7 @@ MIN_ORDER_AMOUNT = Decimal("10000")
 
 
 def get_conn():
-    """공통 DB 설정으로 psycopg2 connection을 생성한다."""
+    """Creates a psycopg2 connection using the common DB settings."""
     return psycopg2.connect(**get_db_config())
 
 
@@ -348,8 +346,8 @@ def build_validation(signal, account_id, available_cash):
 
 def upsert_execution_order(conn, plan_id, account, balance, signal):
     """
-    signal 1건을 strategy_execution_order row로 upsert한다.
-    legacy 스크립트 내부 저장 경로이므로 SQL 의미를 임의로 바꾸지 않는다.
+    Upserts a single signal into a strategy_execution_order row.
+    This is an internal storage path of a legacy script, so the SQL semantics are not changed arbitrarily.
     """
     account_id = account["id"]
     account_no = account["account_no"]

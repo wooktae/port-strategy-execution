@@ -1,9 +1,7 @@
-﻿# C:\Workspaces\port_strategy_execution\execution_sell_builder.py
-
-"""
-OPEN 포지션을 평가해 POSITION_SELL execution order 후보를 생성하는 builder/entrypoint.
-position loader, sell evaluator, repository update를 결합하며 DB write가 발생할 수 있다.
-운영 실행 순서와 포지션 상태 갱신 정책을 임의로 바꾸지 않는다.
+﻿"""
+Builder/entrypoint that evaluates OPEN positions to generate POSITION_SELL execution order candidates.
+It combines the position loader, sell evaluator, and repository update, and DB writes can occur.
+Do not arbitrarily change the operational execution order or the position-state update policy.
 """
 
 from decimal import Decimal
@@ -25,6 +23,7 @@ from execution_repository import (
 )
 from execution_position_loader import load_position_contexts
 from execution_sell_evaluator import evaluate_position_sell
+from execution_locale import t
 
 
 DEFAULT_EXECUTION_MODE = "REVIEW"
@@ -63,11 +62,11 @@ def normalize_signal_score(stock_feature):
 
 def normalize_signal_position_size(position_ctx):
     """
-    SELL에서는 신규 target position size가 없다.
-    현재 보유 포지션 비중을 signal_position_size로 기록한다.
+    For SELL there is no new target position size.
+    Record the current held position weight as signal_position_size.
 
-    정확한 포트폴리오 비중은 나중에 balance 기준으로 개선 가능.
-    지금은 buy_info의 signal_position_size를 우선 사용한다.
+    The exact portfolio weight can be improved later based on balance.
+    For now, prefer the signal_position_size from buy_info.
     """
 
     buy_info = position_ctx.get("buy_info") or {}
@@ -134,7 +133,7 @@ def build_position_sell_order_data(
     evaluation_result,
 ):
     """
-    evaluate_position_sell() 결과를 strategy_execution_order insert용 dict로 변환한다.
+    Converts the evaluate_position_sell() result into a dict for strategy_execution_order insert.
     """
 
     signal_score = normalize_signal_score(stock_feature)
@@ -191,7 +190,7 @@ def build_position_sell_order_data(
         "final_score": final_score,
         "short_pressure_score": short_pressure_score,
 
-        # SELL에서는 target_weight / target_amount를 0으로 둔다.
+        # For SELL, leave target_weight / target_amount at 0.
         "target_weight": Decimal("0"),
         "target_amount": Decimal("0"),
         "current_qty": current_qty,
@@ -225,9 +224,9 @@ def build_position_sell_order_data(
 
 def build_position_sell_orders(conn, *, plan, latest_run, account):
     """
-    운영 포지션 기반 SELL 후보 생성.
+    Generate SELL candidates based on operational positions.
 
-    반환:
+    Returns:
     {
       "evaluated_count": int,
       "sell_created_count": int,
@@ -351,11 +350,11 @@ def main():
         balance = get_latest_balance(conn, account["id"])
         latest_run = get_latest_strategy_run(conn)
 
-        # 운영 SELL 테스트 기준:
-        # 현재는 최신 잔고일(balance.as_of_date)을 plan_date로 사용한다.
+        # Operational SELL test basis:
+        # Currently, the latest balance date (balance.as_of_date) is used as plan_date.
         #
-        # 과거 테스트에서는 2026-04-30 snapshot + 2026-04-29 feature 조합을 사용했었다.
-        # backtest_execution_run과 통합할 때는 plan_date 인자를 받을 예정.
+        # In past tests, a combination of a 2026-04-30 snapshot + 2026-04-29 feature was used.
+        # When integrating with backtest_execution_run, a plan_date argument will be accepted.
         plan_date = balance["as_of_date"]
 
         market_feature = get_latest_market_feature_for_sell(
@@ -421,7 +420,7 @@ def main():
     except Exception as e:
         conn.rollback()
         print()
-        print("[ERROR] Position SELL builder 실패")
+        print(t("[ERROR] Position SELL builder failed", "[ERROR] Position SELL builder 실패"))
         print(e)
         raise
 

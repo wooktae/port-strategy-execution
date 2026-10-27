@@ -1,9 +1,7 @@
-# C:\Workspaces\port_strategy_execution\db_config.py
-
 """
-execution 모듈의 PostgreSQL 접속 설정을 환경변수에서 구성한다.
-민감정보 값은 코드나 문서에 기록하지 않고 로컬 환경변수로 주입한다.
-schema-per-domain 전환을 위한 search_path 옵션도 이곳에서 지정한다.
+Builds the PostgreSQL connection settings for the execution module from environment variables.
+Sensitive values are not recorded in code or documentation and are injected via local environment variables.
+The search_path option for the schema-per-domain transition is also specified here.
 """
 
 import os
@@ -11,8 +9,8 @@ import os
 
 def get_db_config():
     """
-    psycopg2.connect에 전달할 DB 설정 dict를 만든다.
-    INTEREST_DB_PASSWORD는 필수 환경변수로 요구하며 실제 값은 출력하지 않는다.
+    Builds the DB settings dict to pass to psycopg2.connect.
+    INTEREST_DB_PASSWORD is required as an environment variable, and its actual value is not printed.
     """
     password = os.getenv("INTEREST_DB_PASSWORD")
     if not password:

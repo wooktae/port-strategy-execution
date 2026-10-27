@@ -1,7 +1,7 @@
 """
-READY 상태의 SELL execution order를 MarketConnector SELL 실행 요청으로 표시하는 entrypoint.
-Strategy Execution은 실제 주문 제출 없이 REQUESTED 상태 전환까지만 수행한다.
-자동 매도 요청 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
+Entrypoint that marks READY SELL execution orders as MarketConnector SELL execution requests.
+Strategy Execution only performs the transition to the REQUESTED status, without submitting an actual order.
+This is an automatic sell request path, so it is not run without explicit approval and confirmation of the target environment.
 """
 
 import argparse
@@ -16,6 +16,7 @@ from execution_repository import (
     mark_execution_order_execution_mode,
     mark_execution_order_requested,
 )
+from execution_locale import t
 
 
 EXECUTION_MODE_PAPER_STRATEGY = "PAPER_STRATEGY"
@@ -30,9 +31,9 @@ SUPPORTED_AUTO_SELL_SOURCE_TYPES = {
 # -------------------------------------------------
 def _load_kr_holiday_checker():
     """
-    port-interest-crawler / port_interest_crawler 쪽의 interest_get_holidays.py를
-    사용할 수 있으면 한국 휴장일/공휴일 판정을 함께 사용한다.
-    없으면 주말 판정만 수행한다.
+    If interest_get_holidays.py from port-interest-crawler / port_interest_crawler
+    is available, also use its Korean market-holiday / public-holiday check.
+    Otherwise, only the weekend check is performed.
     """
     candidate_paths = [
         Path(r"C:\Workspaces\port-interest-crawler"),
@@ -65,7 +66,7 @@ def is_kr_business_day(target_date=None):
             if holiday_checker(target_date, "KR"):
                 return False, "KR_HOLIDAY"
         except Exception:
-            # 휴일 유틸 오류 때문에 배치를 죽이지는 않고, 주말 판정만 신뢰한다.
+            # Do not kill the batch because of a holiday-utility error; trust only the weekend check.
             pass
 
     return True, "BUSINESS_DAY"
@@ -81,8 +82,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -192,13 +193,13 @@ def validate_auto_sell_order(order):
 
 def validate_latest_sellable_quantity(conn, order):
     """
-    MarketConnector SELL 실행 요청 등록 전에 최신 connector_position_snapshot 기준으로
-    매도가능수량을 다시 확인한다.
+    Before registering the MarketConnector SELL execution request, re-check the sellable quantity
+    against the latest connector_position_snapshot.
 
-    방어 목적:
-    - READY 후보 생성 이후 실제 보유/매도가능수량이 바뀐 경우 차단
-    - sellable_quantity 0인데 주문 나가는 상황 방지
-    - order_qty > 최신 매도가능수량이면 주문 차단
+    Defensive purposes:
+    - Block cases where the actual held / sellable quantity changed after the READY candidate was created
+    - Prevent an order from going out when sellable_quantity is 0
+    - Block the order if order_qty > the latest sellable quantity
     """
 
     snapshot = get_latest_connector_position_snapshot(
@@ -305,8 +306,8 @@ def print_candidate(order, index):
 
 def execute_one_auto_sell(conn, order):
     """
-    단일 SELL execution order를 검증한 뒤 MarketConnector 실행 요청 상태로 전환한다.
-    실제 주문 제출, connector_order_request 생성, 포지션 sell ordered 변경은 수행하지 않는다.
+    Validates a single SELL execution order, then transitions it to the MarketConnector execution request status.
+    It does not perform the actual order submission, the connector_order_request creation, or the position sell-ordered change.
     """
     execution_order_id = order["id"]
 
@@ -391,7 +392,7 @@ def main():
 
         if not orders:
             print()
-            print("[WARN] 자동매도 대상 READY SELL 주문이 없음")
+            print(t("[WARN] No READY SELL order for auto-sell", "[WARN] 자동매도 대상 READY SELL 주문이 없음"))
             conn.rollback()
             return
 
@@ -415,25 +416,25 @@ def main():
         print(f"executable_count : {len(executable_orders)}")
 
         if not executable_orders:
-            print("[WARN] 실행 가능한 자동매도 주문이 없음")
+            print(t("[WARN] No executable auto-sell order", "[WARN] 실행 가능한 자동매도 주문이 없음"))
             conn.rollback()
             return
 
         if not args.execute:
             print()
-            print("조회/검증만 완료. REQUESTED 전환은 --execute 필요.")
+            print(t("Query/validation only complete. --execute is required for the REQUESTED transition.", "조회/검증만 완료. REQUESTED 전환은 --execute 필요."))
             conn.rollback()
             return
 
         print_header("[Auto SELL Execute]")
-        print("자동매도는 PAPER_STRATEGY 모드만 허용됨.")
-        print("전략 order_qty 그대로 MarketConnector SELL 실행 요청 등록.")
+        print(t("Auto-sell is allowed only in PAPER_STRATEGY mode.", "자동매도는 PAPER_STRATEGY 모드만 허용됨."))
+        print(t("Registering the MarketConnector SELL execution request with the strategy order_qty as-is.", "전략 order_qty 그대로 MarketConnector SELL 실행 요청 등록."))
 
         for order in executable_orders:
             execute_one_auto_sell(conn, order)
 
         print_header("[DONE]")
-        print("Daily Position 자동매도 REQUESTED 전환 완료")
+        print(t("Daily Position auto-sell REQUESTED transition complete", "Daily Position 자동매도 REQUESTED 전환 완료"))
 
     except Exception as e:
         conn.rollback()

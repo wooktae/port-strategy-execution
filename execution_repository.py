@@ -1,9 +1,7 @@
-# C:\Workspaces\port_strategy_execution\execution_repository.py
-
 """
-execution 모듈의 DB repository 함수 모음.
-strategy_execution_plan/order, position_state, daily decision, intraday check를 insert/update할 수 있다.
-connector 계좌/잔고/주문/체결/snapshot 조회 경로도 포함하므로 SQL 의미와 상태 전이를 임의로 바꾸지 않는다.
+Collection of DB repository functions for the execution module.
+It can insert/update strategy_execution_plan/order, position_state, daily decision, and intraday check.
+It also includes connector account/balance/order/fill/snapshot query paths, so do not change the SQL meaning and state transitions arbitrarily.
 """
 
 import json
@@ -76,8 +74,8 @@ def get_latest_balance(conn, account_id):
 
 def get_latest_strategy_run(conn):
     """
-    최신 Strategy 실행 결과를 가져옴.
-    strategy_signal은 더 이상 사용하지 않음.
+    Fetch the latest Strategy execution result.
+    strategy_signal is no longer used.
     """
 
     sql = """
@@ -113,7 +111,7 @@ def get_latest_strategy_run(conn):
 
 def get_latest_plan_date(conn, run_id):
     """
-    특정 run_id 기준 가장 최신 daily date를 execution plan date로 사용.
+    Use the most recent daily date for a specific run_id as the execution plan date.
     """
 
     sql = """
@@ -133,7 +131,7 @@ def get_latest_plan_date(conn, run_id):
 
 def get_market_daily(conn, run_id, plan_date):
     """
-    plan_date 기준 시장 상태를 가져옴.
+    Fetch the market state as of plan_date.
     """
 
     sql = """
@@ -165,9 +163,9 @@ def get_market_daily(conn, run_id, plan_date):
 
 def get_buy_candidates(conn, run_id, plan_date):
     """
-    매수 후보:
-    strategy_trade_log에서 buy_date = plan_date 인 거래를 가져옴.
-    리포트의 '2. 매수' 영역과 같은 성격.
+    Buy candidates:
+    Fetch trades from strategy_trade_log where buy_date = plan_date.
+    Same nature as the "2. Buy" section of the report.
     """
 
     sql = """
@@ -206,12 +204,12 @@ def get_buy_candidates(conn, run_id, plan_date):
 
 def get_sell_candidates(conn, run_id, plan_date):
     """
-    매도 후보:
-    strategy_trade_log에서 sell_date = plan_date 인 거래를 가져옴.
-    리포트의 '3. 매도' 영역과 같은 성격.
+    Sell candidates:
+    Fetch trades from strategy_trade_log where sell_date = plan_date.
+    Same nature as the "3. Sell" section of the report.
 
-    단, 실제 주문 실행 시에는 connector_position_snapshot의 실제 보유 수량과
-    반드시 대조해야 함.
+    However, when actually executing orders, this must always be cross-checked
+    against the actual held quantity in connector_position_snapshot.
     """
 
     sql = """
@@ -265,7 +263,7 @@ def get_stock_name(conn, ticker_code):
 
 def get_current_position(conn, account_id, ticker_code):
     """
-    최신 balance snapshot 기준 현재 보유 포지션 조회.
+    Query the currently held position based on the latest balance snapshot.
     """
 
     if not ticker_code:
@@ -360,8 +358,8 @@ def has_open_connector_order(conn, account_id, ticker_code):
 
 def create_or_get_plan(conn, account, balance, latest_run, market_daily):
     """
-    strategy_execution_plan 생성/갱신.
-    이제 strategy_signal 기반이 아니라 최신 strategy_backtest_run + daily 기반.
+    Create/update strategy_execution_plan.
+    Now based on the latest strategy_backtest_run + daily, not on strategy_signal.
     """
 
     available_cash = balance["orderable_cash"] or balance["cash_balance"] or Decimal("0")
@@ -440,12 +438,12 @@ def create_or_get_plan(conn, account, balance, latest_run, market_daily):
 
 def upsert_execution_order(conn, order_data):
     """
-    strategy_execution_order 생성/갱신.
+    Create/update strategy_execution_order.
 
-    핵심 변경:
-    - strategy_signal_id는 더 이상 사용하지 않으므로 NULL 저장
-    - source_run_id, source_trade_log_id, source_type 사용
-    - ON CONFLICT는 새로 만든 trade_log 기반 unique index 기준 사용
+    Key changes:
+    - strategy_signal_id is no longer used, so store NULL
+    - Use source_run_id, source_trade_log_id, source_type
+    - ON CONFLICT uses the newly created trade_log-based unique index
     """
 
     sql = """
@@ -693,9 +691,9 @@ def get_execution_order_for_execute(conn, execution_order_id):
 
 def mark_execution_order_execution_mode(conn, execution_order_id, execution_mode):
     """
-    strategy_execution_order의 실행 모드를 명시적으로 변경한다.
+    Explicitly change the execution mode of strategy_execution_order.
 
-    사용 예:
+    Usage examples:
     - DRY_RUN
     - MANUAL_TEST
     - PAPER_STRATEGY
@@ -723,8 +721,8 @@ def mark_execution_order_execution_mode(conn, execution_order_id, execution_mode
 
 def mark_execution_order_manual_test(conn, execution_order_id):
     """
-    기존 호환용 wrapper.
-    신규 실행기는 mark_execution_order_execution_mode() 사용 권장.
+    Backward-compatibility wrapper.
+    New executors are recommended to use mark_execution_order_execution_mode().
     """
 
     return mark_execution_order_execution_mode(
@@ -735,8 +733,8 @@ def mark_execution_order_manual_test(conn, execution_order_id):
 
 def mark_execution_order_requested(conn, execution_order_id, result_payload):
     """
-    READY strategy_execution_order를 MarketConnector 실행 요청 대상으로 표시한다.
-    connector_order_request_id는 MarketConnector executor가 주문 요청을 만들 때 연결한다.
+    Mark a READY strategy_execution_order as a MarketConnector execution request target.
+    connector_order_request_id is linked when the MarketConnector executor creates the order request.
     """
     sql = """
         UPDATE strategy_execution_order
@@ -764,8 +762,8 @@ def mark_execution_order_requested(conn, execution_order_id, result_payload):
 
 def mark_execution_order_submitted(conn, execution_order_id, connector_order_request_id, result_payload):
     """
-    connector 주문 접수 결과를 strategy_execution_order에 SUBMITTED 상태로 반영한다.
-    connector_order_request_id 연결은 후속 fill sync의 기준이 된다.
+    Reflect the connector order-acceptance result into strategy_execution_order as SUBMITTED status.
+    The connector_order_request_id link becomes the basis for subsequent fill sync.
     """
     sql = """
         UPDATE strategy_execution_order
@@ -832,7 +830,7 @@ def mark_execution_order_execute_failed(
 
 def dumps_json(value):
     """
-    DB json/jsonb, dict, list, None 값을 안전하게 문자열 JSON으로 변환.
+    Safely convert DB json/jsonb, dict, list, and None values into a JSON string.
     """
 
     if value is None:
@@ -844,16 +842,16 @@ def dumps_json(value):
     return json.dumps(value, ensure_ascii=False, default=str)
 
 # =========================================================
-# POSITION_SELL 운영 SELL 전용 repository 함수
+# POSITION_SELL repository functions dedicated to operational SELL
 # =========================================================
 
 def get_latest_stock_feature_for_sell(conn, ticker_code, plan_date):
     """
-    운영 SELL 평가용 종목 feature 조회.
+    Query the stock feature for operational SELL evaluation.
 
-    기준:
-    - plan_date 이하 최신 pre_total_stock_daily_feature 사용
-    - 장 시작 직후에는 당일 feature가 없을 수 있으므로 <= plan_date 기준
+    Criteria:
+    - Use the latest pre_total_stock_daily_feature at or before plan_date
+    - Right after market open the same-day feature may be absent, so use the <= plan_date basis
     """
 
     sql = """
@@ -874,11 +872,11 @@ def get_latest_stock_feature_for_sell(conn, ticker_code, plan_date):
 
 def get_latest_market_feature_for_sell(conn, plan_date):
     """
-    운영 SELL 평가용 market feature 조회.
+    Query the market feature for operational SELL evaluation.
 
-    기준:
-    - plan_date 이하 최신 pre_total_market_daily_feature 사용
-    - market_signal 컬럼이 없을 수 있으므로 evaluator에서 UNKNOWN 처리
+    Criteria:
+    - Use the latest pre_total_market_daily_feature at or before plan_date
+    - The market_signal column may be absent, so the evaluator treats it as UNKNOWN
     """
 
     sql = """
@@ -897,12 +895,12 @@ def get_latest_market_feature_for_sell(conn, plan_date):
 
 def update_position_sell_evaluation(conn, position_state_id, plan_date, evaluation_result):
     """
-    strategy_position_state에 최신 SELL 평가 결과 저장.
+    Store the latest SELL evaluation result in strategy_position_state.
 
-    SELL/HOLD/SKIP 모두 저장한다.
-    - 마지막 평가일
-    - 최신 sell reason
-    - 최신 sell_info
+    Store SELL/HOLD/SKIP alike.
+    - Last evaluation date
+    - Latest sell reason
+    - Latest sell_info
     - validation result
     """
 
@@ -945,7 +943,7 @@ def update_position_sell_evaluation(conn, position_state_id, plan_date, evaluati
 
 def mark_position_sell_ready(conn, position_state_id, evaluation_result):
     """
-    SELL 후보가 READY로 생성되었을 때 position 상태를 SELL_READY로 변경.
+    Change the position status to SELL_READY when a SELL candidate is created as READY.
     """
 
     sql = """
@@ -973,8 +971,8 @@ def mark_position_sell_ready(conn, position_state_id, evaluation_result):
 
 def mark_position_sell_ordered(conn, position_state_id):
     """
-    나중에 실제 connector SELL 주문 제출 후 사용할 함수.
-    지금 builder 단계에서는 아직 사용하지 않음.
+    Function to be used later after an actual connector SELL order submission.
+    Not yet used at the current builder stage.
     """
 
     sql = """
@@ -997,9 +995,9 @@ def mark_position_sell_ordered(conn, position_state_id):
 
 def mark_position_closed_after_sell(conn, position_state_id, closed_qty):
     """
-    나중에 SELL 체결 확인 후 사용할 함수.
-    remaining_qty를 줄이고 0이면 CLOSED 처리.
-    지금 builder 단계에서는 아직 사용하지 않음.
+    Function to be used later after confirming SELL fills.
+    Reduce remaining_qty and mark CLOSED if it reaches 0.
+    Not yet used at the current builder stage.
     """
 
     sql = """
@@ -1029,11 +1027,11 @@ def mark_position_closed_after_sell(conn, position_state_id, closed_qty):
 
 def upsert_position_sell_execution_order(conn, order_data):
     """
-    POSITION_SELL 운영 매도 후보를 strategy_execution_order에 생성/갱신.
+    Create/update a POSITION_SELL operational sell candidate in strategy_execution_order.
 
-    기존 upsert_execution_order()와 분리한 이유:
-    - 기존 함수는 source_trade_log_id 기반
-    - 운영 SELL은 source_position_state_id 기반
+    Reason for separating from the existing upsert_execution_order():
+    - The existing function is based on source_trade_log_id
+    - Operational SELL is based on source_position_state_id
     """
 
     sql = """
@@ -1211,12 +1209,12 @@ def upsert_position_sell_execution_order(conn, order_data):
     return execute_one(conn, sql, order_data)
 
 # =========================================================
-# DAILY_SIGNAL_BUY repository 함수
+# DAILY_SIGNAL_BUY repository functions
 # =========================================================
 
 def get_latest_daily_run(conn):
     """
-    최신 COMPLETED Daily Signal run 조회.
+    Query the latest COMPLETED Daily Signal run.
     """
 
     sql = """
@@ -1258,7 +1256,7 @@ def get_latest_daily_run(conn):
 
 def get_daily_buy_signals(conn, daily_run_id):
     """
-    Daily Signal BUY 후보 조회.
+    Query Daily Signal BUY candidates.
     """
 
     sql = """
@@ -1309,7 +1307,7 @@ def get_daily_buy_signals(conn, daily_run_id):
 
 def create_or_get_daily_signal_plan(conn, account, balance, daily_run):
     """
-    Daily Signal 기반 strategy_execution_plan 생성/갱신.
+    Create/update strategy_execution_plan based on the Daily Signal.
     """
 
     available_cash = balance["orderable_cash"] or balance["cash_balance"] or Decimal("0")
@@ -1383,11 +1381,11 @@ def create_or_get_daily_signal_plan(conn, account, balance, daily_run):
 
 def upsert_daily_signal_execution_order(conn, order_data):
     """
-    DAILY_SIGNAL_BUY 운영 매수 후보를 strategy_execution_order에 생성/갱신.
+    Create/update a DAILY_SIGNAL_BUY operational buy candidate in strategy_execution_order.
 
-    기존 upsert_execution_order()와 분리한 이유:
-    - 기존 함수는 source_trade_log_id 기반
-    - Daily Signal은 source_daily_signal_id 기반
+    Reason for separating from the existing upsert_execution_order():
+    - The existing function is based on source_trade_log_id
+    - Daily Signal is based on source_daily_signal_id
     """
 
     sql = """
@@ -1559,13 +1557,13 @@ def upsert_daily_signal_execution_order(conn, order_data):
     return execute_one(conn, sql, order_data)
 
 # =========================================================
-# DAILY_POSITION_SELL repository 함수
+# DAILY_POSITION_SELL repository functions
 # =========================================================
 
 def get_latest_daily_run_for_position_decision(conn):
     """
-    최신 COMPLETED Daily Signal run 조회.
-    Daily Position Decision은 strategy_daily_run을 부모로 사용한다.
+    Query the latest COMPLETED Daily Signal run.
+    Daily Position Decision uses strategy_daily_run as its parent.
     """
 
     sql = """
@@ -1607,7 +1605,7 @@ def get_latest_daily_run_for_position_decision(conn):
 
 def get_ready_daily_position_sell_decisions(conn, daily_run_id):
     """
-    Daily Position Decision 중 SELL READY 후보 조회.
+    Query SELL READY candidates among Daily Position Decisions.
     """
 
     sql = """
@@ -1676,10 +1674,10 @@ def get_ready_daily_position_sell_decisions(conn, daily_run_id):
 
 def upsert_daily_position_sell_execution_order(conn, order_data):
     """
-    DAILY_POSITION_SELL 운영 매도 후보를 strategy_execution_order에 생성/갱신.
+    Create/update a DAILY_POSITION_SELL operational sell candidate in strategy_execution_order.
 
-    기준:
-    - source_daily_position_decision_id 기반
+    Criteria:
+    - Based on source_daily_position_decision_id
     - source_type = DAILY_POSITION_SELL
     - action_type = SELL
     """
@@ -1871,7 +1869,7 @@ def upsert_daily_position_sell_execution_order(conn, order_data):
 
 def update_daily_position_decision_execution_order_link(conn, decision_id, execution_order_id):
     """
-    strategy_daily_position_decision에 생성된 execution_order_id를 연결한다.
+    Link the created execution_order_id to strategy_daily_position_decision.
     """
 
     sql = """
@@ -1894,14 +1892,14 @@ def update_daily_position_decision_execution_order_link(conn, decision_id, execu
 
 def get_ready_daily_buy_execution_orders(conn, plan_id=None, limit=20):
     """
-    자동 매수 실행 대상 DAILY_SIGNAL_BUY READY 주문 조회.
+    Query DAILY_SIGNAL_BUY READY orders targeted for automatic buy execution.
 
-    조건:
-    - Daily BUY Signal 기반 주문
+    Conditions:
+    - Order based on the Daily BUY Signal
     - BUY
     - READY
-    - 아직 Connector 주문 요청 없음
-    - DRY_RUN 또는 PAPER_STRATEGY 상태만 허용
+    - No Connector order request yet
+    - Only DRY_RUN or PAPER_STRATEGY status allowed
     """
 
     params = {
@@ -1987,14 +1985,14 @@ def get_ready_daily_buy_execution_orders(conn, plan_id=None, limit=20):
 
 def get_ready_daily_position_sell_execution_orders(conn, plan_id=None, limit=20):
     """
-    Daily/Intraday SELL 자동 실행 대상 조회.
+    Query targets for Daily/Intraday SELL automatic execution.
 
-    대상:
+    Targets:
     - source_type IN (DAILY_POSITION_SELL, INTRADAY_STOP_SELL)
     - action_type = SELL
     - execution_status = READY
-    - execution_mode = DRY_RUN 또는 PAPER_STRATEGY
-    - connector_order_request_id 없음
+    - execution_mode = DRY_RUN or PAPER_STRATEGY
+    - No connector_order_request_id
     """
 
     params = {
@@ -2055,12 +2053,12 @@ def get_ready_daily_position_sell_execution_orders(conn, plan_id=None, limit=20)
 
 def get_open_strategy_positions_for_intraday_monitor(conn, account_id=None):
     """
-    Intraday Position Monitor 대상 OPEN 전략 포지션 조회.
+    Query OPEN strategy positions targeted by the Intraday Position Monitor.
 
-    기준:
+    Criteria:
     - strategy_position_state.position_status = OPEN
     - remaining_qty > 0
-    - 필요 시 account_id 필터
+    - account_id filter when needed
     """
 
     params = {}
@@ -2108,7 +2106,7 @@ def get_open_strategy_positions_for_intraday_monitor(conn, account_id=None):
 
 def get_latest_connector_position_snapshot(conn, account_id, ticker_code):
     """
-    최신 balance snapshot 기준 connector_position_snapshot 조회.
+    Query connector_position_snapshot based on the latest balance snapshot.
     """
 
     sql = """
@@ -2162,11 +2160,11 @@ def get_latest_connector_position_snapshot(conn, account_id, ticker_code):
 
 def get_latest_daily_execution_plan(conn, account_id):
     """
-    Intraday Stop SELL 주문을 붙일 최신 Daily execution plan 조회.
+    Query the latest Daily execution plan to attach an Intraday Stop SELL order to.
 
-    1차 정책:
-    - 오늘 또는 가장 최신 Daily execution plan을 재사용
-    - strategy_execution_order.execution_plan_id가 NOT NULL 필수이므로 필요
+    Primary policy:
+    - Reuse today's or the most recent Daily execution plan
+    - Needed because strategy_execution_order.execution_plan_id must be NOT NULL
     """
 
     sql = """
@@ -2208,12 +2206,12 @@ def get_latest_daily_execution_plan(conn, account_id):
 
 def upsert_intraday_stop_sell_execution_order(conn, order_data):
     """
-    INTRADAY_STOP_SELL 운영 매도 후보를 strategy_execution_order에 생성/갱신.
+    Create/update an INTRADAY_STOP_SELL operational sell candidate in strategy_execution_order.
 
-    주의:
-    - DB에는 INTRADAY_STOP_SELL 전용 unique index가 아직 없음
-    - 따라서 INSERT 전에 같은 plan/position/source_type/action_type READY/SUBMITTED 계열이 있는지 확인
-    - 이미 있으면 기존 row를 UPDATE 후 반환
+    Note:
+    - The DB does not yet have a unique index dedicated to INTRADAY_STOP_SELL
+    - Therefore, before INSERT, check whether a READY/SUBMITTED row with the same plan/position/source_type/action_type exists
+    - If one already exists, UPDATE the existing row and return it
     """
 
     find_sql = """
@@ -2399,16 +2397,16 @@ def upsert_intraday_stop_sell_execution_order(conn, order_data):
 
 def insert_intraday_position_check(conn, monitor_result, created_execution_order_id=None):
     """
-    Intraday Position Monitor 결과를 strategy_intraday_position_check에 저장한다.
+    Store the Intraday Position Monitor result in strategy_intraday_position_check.
 
-    호출 정책:
-    - warning 존재
+    Call policy:
+    - Warning present
     - current_price <= 0
-    - --create-order 없이 should_stop 후보 감지
-    - INTRADAY_STOP_SELL 주문 생성 후 created_execution_order_id 기록
+    - A should_stop candidate detected without --create-order
+    - Record created_execution_order_id after creating an INTRADAY_STOP_SELL order
 
-    이 함수 자체는 저장 여부를 판단하지 않고,
-    호출하는 쪽에서 저장 정책을 결정한다.
+    This function itself does not decide whether to save;
+    the caller determines the save policy.
     """
 
     warnings = monitor_result.get("warnings") or []

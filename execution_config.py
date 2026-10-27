@@ -1,9 +1,7 @@
-# C:\Workspaces\port_strategy_execution\execution_config.py
-
 """
-execution 모듈의 환경변수 기반 설정을 모으는 파일.
-DB, 계좌, broker, strategy, sizing 관련 key를 읽지만 민감정보 값은 문서화하지 않는다.
-설정명과 기본 정책은 다른 실행 스크립트가 공유하므로 임의 변경하지 않는다.
+File that gathers the environment-variable-based settings for the execution module.
+It reads DB, account, broker, strategy, and sizing keys, but does not document sensitive values.
+The setting names and default policies are shared by other execution scripts, so do not change them arbitrarily.
 """
 
 import os

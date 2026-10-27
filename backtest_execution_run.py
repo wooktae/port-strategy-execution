@@ -1,9 +1,7 @@
-﻿# C:\Workspaces\port_strategy_execution\backtest_execution_run.py
-
-"""
-Backtest trade log를 execution order 후보로 변환하는 실행 스크립트.
-최신 전략 run, market daily, buy/sell 후보를 DB에서 읽고 plan/order를 저장할 수 있다.
-운영 DB write가 발생할 수 있으므로 문서화/검토 작업에서는 실행하지 않는다.
+﻿"""
+Execution script that converts a backtest trade log into execution order candidates.
+It can read the latest strategy run, market daily, and buy/sell candidates from the DB and store the plan/order.
+Because operational DB writes may occur, do not run it during documentation/review work.
 """
 
 import argparse
@@ -24,6 +22,7 @@ from execution_repository import (
     mark_plan_no_candidate,
 )
 from execution_builder import build_execution_orders
+from execution_locale import t
 
 
 def print_header(title):
@@ -69,21 +68,21 @@ def main():
 
     try:
         # -------------------------------------------------
-        # 1. Connector 계좌 / 최신 잔고 조회
+        # 1. Query the Connector account / latest balance
         # -------------------------------------------------
         account = get_account(conn)
         balance = get_latest_balance(conn, account["id"])
 
         # -------------------------------------------------
-        # 2. 최신 Backtest Strategy Run 조회
+        # 2. Query the latest Backtest Strategy Run
         # -------------------------------------------------
         latest_run = get_latest_strategy_run(conn)
         run_id = latest_run["run_id"]
 
         # -------------------------------------------------
-        # 3. plan_date 결정
-        #    - 옵션이 있으면 강제 날짜 사용
-        #    - 없으면 최신 backtest daily date 사용
+        # 3. Determine plan_date
+        #    - If the option is provided, use the forced date
+        #    - Otherwise, use the latest backtest daily date
         # -------------------------------------------------
         if forced_plan_date:
             plan_date = forced_plan_date
@@ -93,18 +92,18 @@ def main():
             plan_date_mode = "LATEST"
 
         # -------------------------------------------------
-        # 4. Backtest daily market row 조회
+        # 4. Query the Backtest daily market row
         # -------------------------------------------------
         market_daily = get_market_daily(conn, run_id, plan_date)
 
         # -------------------------------------------------
-        # 5. Backtest trade_log 기반 BUY / SELL 후보 조회
+        # 5. Query BUY / SELL candidates based on the Backtest trade_log
         # -------------------------------------------------
         buy_candidates = get_buy_candidates(conn, run_id, plan_date)
         sell_candidates = get_sell_candidates(conn, run_id, plan_date)
 
         # -------------------------------------------------
-        # 6. Execution Plan 생성 또는 재사용
+        # 6. Create or reuse the Execution Plan
         # -------------------------------------------------
         plan_id = create_or_get_plan(
             conn=conn,
@@ -115,7 +114,7 @@ def main():
         )
 
         # -------------------------------------------------
-        # 7. Execution Order 후보 생성
+        # 7. Build Execution Order candidates
         # -------------------------------------------------
         order_data_list = build_execution_orders(
             conn=conn,
@@ -143,11 +142,11 @@ def main():
 
         if not order_data_list:
             print()
-            print("[WARN] 생성할 backtest execution order 후보가 없음")
-            print("       plan_date 기준 buy_date/sell_date 후보가 없는 상태일 수 있음")
+            print(t("[WARN] No backtest execution order candidate to create", "[WARN] 생성할 backtest execution order 후보가 없음"))
+            print(t("       There may be no buy_date/sell_date candidate for the given plan_date", "       plan_date 기준 buy_date/sell_date 후보가 없는 상태일 수 있음"))
 
         # -------------------------------------------------
-        # 8. Execution Order DB 저장
+        # 8. Store Execution Orders in the DB
         # -------------------------------------------------
         saved_rows = []
 
@@ -163,7 +162,7 @@ def main():
             )
 
         # -------------------------------------------------
-        # 9. Plan Summary 갱신
+        # 9. Update the Plan Summary
         # -------------------------------------------------
         if order_data_list:
             summary = update_plan_summary(conn, plan_id)
@@ -182,10 +181,10 @@ def main():
             print(f"skipped_orders   : {summary['skipped_order_count']}")
             print(f"target_amount    : {summary['total_target_amount']}")
         else:
-            print("[WARN] plan summary 없음")
+            print(t("[WARN] No plan summary", "[WARN] plan summary 없음"))
 
         print_header("[DONE]")
-        print("Backtest execution candidate build 완료")
+        print(t("Backtest execution candidate build complete", "Backtest execution candidate build 완료"))
 
     except Exception as e:
         conn.rollback()

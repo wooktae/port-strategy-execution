@@ -1,7 +1,7 @@
 """
-READY 상태의 daily BUY execution order를 MarketConnector BUY 실행 요청으로 표시하는 entrypoint.
-Strategy Execution은 실제 주문 제출 없이 REQUESTED 상태 전환까지만 수행한다.
-자동 주문 요청 경로이므로 명시 승인과 대상 환경 확인 없이 실행하지 않는다.
+Entrypoint that marks READY daily BUY execution orders as MarketConnector BUY execution requests.
+Strategy Execution only performs the transition to the REQUESTED status, without submitting an actual order.
+This is an automatic order request path, so it is not run without explicit approval and confirmation of the target environment.
 """
 
 import argparse
@@ -15,6 +15,7 @@ from execution_repository import (
     mark_execution_order_execution_mode,
     mark_execution_order_requested,
 )
+from execution_locale import t
 
 
 EXECUTION_MODE_PAPER_STRATEGY = "PAPER_STRATEGY"
@@ -25,9 +26,9 @@ SIZING_POLICY = "PAPER_STRATEGY_FULL_STRATEGY_QTY"
 # -------------------------------------------------
 def _load_kr_holiday_checker():
     """
-    port-interest-crawler / port_interest_crawler 쪽의 interest_get_holidays.py를
-    사용할 수 있으면 한국 휴장일/공휴일 판정을 함께 사용한다.
-    없으면 주말 판정만 수행한다.
+    If interest_get_holidays.py from port-interest-crawler / port_interest_crawler
+    is available, also use its Korean market-holiday / public-holiday check.
+    Otherwise, only the weekend check is performed.
     """
     candidate_paths = [
         Path(r"C:\Workspaces\port-interest-crawler"),
@@ -60,7 +61,7 @@ def is_kr_business_day(target_date=None):
             if holiday_checker(target_date, "KR"):
                 return False, "KR_HOLIDAY"
         except Exception:
-            # 휴일 유틸 오류 때문에 배치를 죽이지는 않고, 주말 판정만 신뢰한다.
+            # Do not kill the batch because of a holiday-utility error; trust only the weekend check.
             pass
 
     return True, "BUSINESS_DAY"
@@ -76,8 +77,8 @@ def print_non_business_day_no_target(step_name):
     print_header(f"[{step_name} Blocked]")
     print(f"today  : {today}")
     print(f"reason : {reason}")
-    print("[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다.")
-    print("connector_order_request를 생성하지 않고 종료합니다.")
+    print(t("[NO_TARGET] Not a Korean business day, so order-related processing is skipped.", "[NO_TARGET] 한국 영업일이 아니므로 주문 관련 처리를 실행하지 않습니다."))
+    print(t("Exiting without creating connector_order_request.", "connector_order_request를 생성하지 않고 종료합니다."))
 
     return True
 
@@ -211,8 +212,8 @@ def print_candidate(order, index):
 
 def execute_one_auto_buy(conn, order):
     """
-    단일 BUY execution order를 검증한 뒤 MarketConnector 실행 요청 상태로 전환한다.
-    실제 주문 제출과 connector_order_request 생성은 Strategy Execution에서 수행하지 않는다.
+    Validates a single BUY execution order, then transitions it to the MarketConnector execution request status.
+    Strategy Execution does not perform the actual order submission or the connector_order_request creation.
     """
     execution_order_id = order["id"]
 
@@ -273,7 +274,7 @@ def main():
 
         if not orders:
             print()
-            print("[WARN] 자동매수 대상 READY Daily BUY 주문이 없음")
+            print(t("[WARN] No READY Daily BUY order for auto-buy", "[WARN] 자동매수 대상 READY Daily BUY 주문이 없음"))
             conn.rollback()
             return
 
@@ -297,25 +298,25 @@ def main():
         print(f"executable_count : {len(executable_orders)}")
 
         if not executable_orders:
-            print("[WARN] 실행 가능한 자동매수 주문이 없음")
+            print(t("[WARN] No executable auto-buy order", "[WARN] 실행 가능한 자동매수 주문이 없음"))
             conn.rollback()
             return
 
         if not args.execute:
             print()
-            print("조회/검증만 완료. REQUESTED 전환은 --execute 필요.")
+            print(t("Query/validation only complete. --execute is required for the REQUESTED transition.", "조회/검증만 완료. REQUESTED 전환은 --execute 필요."))
             conn.rollback()
             return
 
         print_header("[Auto BUY Execute]")
-        print("자동매수는 PAPER_STRATEGY 모드만 허용됨.")
-        print("전략 order_qty 그대로 MarketConnector BUY 실행 요청 등록.")
+        print(t("Auto-buy is allowed only in PAPER_STRATEGY mode.", "자동매수는 PAPER_STRATEGY 모드만 허용됨."))
+        print(t("Registering the MarketConnector BUY execution request with the strategy order_qty as-is.", "전략 order_qty 그대로 MarketConnector BUY 실행 요청 등록."))
 
         for order in executable_orders:
             execute_one_auto_buy(conn, order)
 
         print_header("[DONE]")
-        print("Daily Signal 자동매수 REQUESTED 전환 완료")
+        print(t("Daily Signal auto-buy REQUESTED transition complete", "Daily Signal 자동매수 REQUESTED 전환 완료"))
 
     except Exception as e:
         conn.rollback()
