@@ -5,6 +5,7 @@ Because fill-query and position-change DB writes occur, do not run it without ex
 """
 
 from decimal import Decimal
+import argparse
 
 from execution_db import get_conn, fetch_all, fetch_one, execute_one
 from execution_repository import dumps_json
@@ -12,6 +13,7 @@ from execution_locale import t
 
 
 SYNC_SOURCE = "execution_sync_sell_fill"
+INTRADAY_SYNC_API = "intraday-id-scope-v1"
 
 
 def to_decimal(value, default="0"):
@@ -434,7 +436,68 @@ def print_header(title):
     print("========================================")
 
 
-def main():
+def sync_intraday_orders(conn, order_ids, account_id):
+    """Sync only explicit PAPER_INTRADAY IDs, under per-order/position locks.
+
+    The caller owns commit/rollback. Never calls broker APIs or selects Daily rows.
+    """
+    if (isinstance(account_id, bool) or not isinstance(account_id, int) or account_id <= 0
+            or not order_ids or len(order_ids) > 20
+            or any(isinstance(i, bool) or not isinstance(i, int) or i <= 0 for i in order_ids)):
+        raise ValueError("INVALID_INTRADAY_SCOPE")
+    results = []
+    for order_id in sorted(set(order_ids)):
+        order = fetch_one(conn, """
+            SELECT * FROM execution.strategy_execution_order
+             WHERE id = %(id)s AND account_id = %(account_id)s
+               AND execution_mode = 'PAPER_INTRADAY' AND action_type = 'SELL'
+               AND source_type = 'INTRADAY_STOP_SELL' AND signal_type = 'INTRADAY_STOP_SELL'
+               AND execution_status IN ('SUBMITTED', 'FILLED')
+               AND connector_order_request_id IS NOT NULL
+               AND COALESCE(result_payload->'intraday_auto'->>'runId', '') <> ''
+             FOR UPDATE
+        """, {"id": order_id, "account_id": account_id})
+        if not order:
+            raise RuntimeError("INTRADAY_SCOPE_MISMATCH")
+        if order["execution_status"] == "FILLED":
+            results.append({"execution_order_id": order_id, "status": "ALREADY_FILLED"})
+            continue
+        request = fetch_one(conn, """
+            SELECT * FROM connector.connector_order_request
+             WHERE id = %(id)s FOR UPDATE
+        """, {"id": order["connector_order_request_id"]})
+        if (not request or request["account_id"] != account_id
+                or request["ticker_code"] != order["ticker_code"]
+                or request["request_type"] != "SELL"
+                or request["strategy_run_id"] != "intraday:" + str(order_id)
+                or request["order_qty"] != order["order_qty"]):
+            raise RuntimeError("INTRADAY_REQUEST_MISMATCH")
+        if request["request_status"] != "FILLED":
+            if request["request_status"] not in ("ACCEPTED", "SUBMITTED", "PENDING", "PARTIAL_FILLED", "PARTIALLY_FILLED"):
+                raise RuntimeError("INTRADAY_TERMINAL_RECONCILIATION_REQUIRED")
+            results.append({"execution_order_id": order_id, "status": "PENDING"})
+            continue
+        position = fetch_one(conn, """
+            SELECT * FROM execution.strategy_position_state
+             WHERE id = %(id)s AND account_id = %(account_id)s AND ticker_code = %(ticker)s
+             FOR UPDATE
+        """, {"id": order["source_position_state_id"], "account_id": account_id,
+              "ticker": order["ticker_code"]})
+        fills = get_connector_sell_fills(conn, request["id"])
+        total = summarize_fills(fills)["total_fill_qty"] if fills else 0
+        if (not position or total != order["order_qty"] or total > position["remaining_qty"]
+                or len({f["id"] for f in fills}) != len(fills)
+                or any(f["account_id"] != account_id or f["ticker_code"] != order["ticker_code"]
+                       or f["side"] != "SELL" for f in fills)):
+            raise RuntimeError("INTRADAY_FILL_MISMATCH")
+        result = sync_one_order(conn, order)
+        if result["status"] != "SYNCED":
+            raise RuntimeError("INTRADAY_SYNC_FAILED")
+        results.append(result)
+    return results
+
+
+def daily_main():
     conn = get_conn()
     conn.autocommit = False
 
@@ -496,6 +559,36 @@ def main():
         print(e)
         raise
 
+    finally:
+        conn.close()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--intraday-order-id", type=int, action="append")
+    parser.add_argument("--intraday-account-id", type=int)
+    parser.add_argument("--intraday-preflight", action="store_true")
+    args = parser.parse_args()
+    if args.intraday_preflight:
+        if args.intraday_order_id is not None or args.intraday_account_id is not None:
+            parser.error("Preflight cannot include order scope")
+        print(INTRADAY_SYNC_API)
+        return
+    if args.intraday_order_id is None and args.intraday_account_id is None:
+        return daily_main()
+    if not args.intraday_order_id or args.intraday_account_id is None:
+        parser.error("Both intraday order IDs and account ID are required")
+    conn = get_conn()
+    conn.autocommit = False
+    try:
+        results = sync_intraday_orders(conn, args.intraday_order_id, args.intraday_account_id)
+        conn.commit()
+        # Log only internal execution IDs and states, never account/broker details.
+        for result in results:
+            print("INTRADAY_FILL_SYNC", result["execution_order_id"], result["status"])
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
